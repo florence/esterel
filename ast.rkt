@@ -1,0 +1,27 @@
+#lang racket
+(provide (all-defined-out))
+(require (for-syntax syntax/parse))
+(define-syntax (define-dt stx)
+  (syntax-parse stx
+    [(_ base (ba ...) (name (args ...)) ...)
+     #'(begin (struct base (ba ...))
+              (struct name base (args ...)) ...)]))
+(define-dt ast ()
+  (nothing ())
+  (pause ())
+  (seq (left right))
+  (par (left right))
+  (suspend (S p))
+  (loop (p))
+  (signal (S p))
+  (emit (S))
+  (present (S then else))
+  ;; TODO the t is actually not needed
+  (trap (T p))
+  (exit (T))
+  (sel (p)))
+
+(define-dt presence (S)
+  (:present ())
+  (:absent ())
+  (:unknown ()))
