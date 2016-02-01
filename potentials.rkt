@@ -197,12 +197,16 @@
 (define (rem S E)
   (filter (lambda (p) (equal? S (presence-S p))) E))
 (define (add S E) (cons S E))
-(define (get S E)
+
+(define sentinal (gensym))
+(define (get S E [v sentinal])
   (match (findf (lambda (x) (equal? S (presence-S x))) E)
     [(:present _) 'present]
     [(:absent _) 'absent]
     [(:unknown _) 'unknown]
-    [#f (error 'presence "could not find evidence of signal ~a in ~a" S E)]))
+    [#f (if (not (eq? v sentinal))
+            v
+            (error 'presence "could not find evidence of signal ~a in ~a" S E))]))
 (define skip-selected (make-parameter #f))
 (define (has-selected? p)
   (if (skip-selected)

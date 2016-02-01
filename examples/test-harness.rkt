@@ -15,11 +15,13 @@
          (values
           (cons
            #`(begin
-               (define-values (out next) (eval-top #,mach '(ins ...)))
                #|
                (pretty-print '#,i/o-pair)
                (displayln 'old:)
                (pretty-print (machine-prog #,mach))
+               |#
+               (define-values (out next) (eval-top #,mach '(ins ...)))
+               #|
                (displayln 'new:)
                (pretty-print (machine-prog next))
                |#

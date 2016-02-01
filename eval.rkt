@@ -73,7 +73,7 @@
           (values (trap T p*) S* (sub1 k))])]
   [((signal S p) E)
    (define-values (Sm Km) (must p (add (:unknown S) E)))
-   (cond [(eq? 'present (get S Sm))
+   (cond [(eq? 'present (get S Sm #f))
           (define-values (p* S* k) (eval p (add (:present S) E)))
           (values (signal S p*) (remove S S*) k)]
          ;; logically its actuall S not present in can*
