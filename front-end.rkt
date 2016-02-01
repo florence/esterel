@@ -14,6 +14,8 @@
          signal&
          loop-each&
          await&
+         abort&
+         halt&
          machine-prog)
 (require esterel/transform esterel/analysis racket/stxparam racket/stxparam-exptime
          esterel/analysis
