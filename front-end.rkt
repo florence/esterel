@@ -86,41 +86,42 @@
     [(_ S:id th:expr el:expr) #'(node:present 'S th el)]))
 (define-esterel-form suspend&
   (syntax-parser
-    [(_ S:id p:expr) #'(node:suspend 'S p)]))
+    [(_ S:id p:expr ...) #'(node:suspend 'S (seq& p ...))]))
 (define-esterel-form seq&
   (syntax-parser
-    [(_ l:expr r:expr) #'(node:seq l r)]))
+    [(_ p:expr) #'p]
+    [(_ l:expr r:expr ...) #'(node:seq l (seq& r ...))]))
 (define-esterel-form loop&
   (syntax-parser
-    [(_ p:expr)
-     #'(node:loop p)]))
+    [(_ p:expr ...)
+     #'(node:loop (seq& p ...))]))
 (define-esterel-form par&
   (syntax-parser
     [(_ l:expr r:expr) #'(node:par l r)]))
 (define-esterel-form trap&
   (syntax-parser
-    [(_ T:id p:expr)
+    [(_ T:id p:expr ...)
      #`(syntax-parameterize ([exit-stack (cons #'T (syntax-parameter-value #'exit-stack))])
-         (node:trap 'T p))]))
+         (node:trap 'T (seq& p ...)))]))
 (define-esterel-form signal&
   (syntax-parser
-    [(_ S:id p:expr)
-     #'(node:signal 'S p)]))
+    [(_ S:id p:expr ...)
+     #'(node:signal 'S (seq& p ...))]))
 
 (define-esterel-form loop-each&
   (syntax-parser
-    [(_ S p)
+    [(_ S:id p:expr ...)
      #'(loop&
         (abort& S
-                (seq& p halt&)))]))
+                (seq& (seq& p ...) halt&)))]))
 
 (define-esterel-form abort&
   (syntax-parser
-    [(_ S p)
+    [(_ S:id p:expr ...)
      (define/with-syntax T (generate-temporary (format-id #f "~a-abort-trap" #'S)))
      #'(trap& T
-             (par& (seq& (suspend& S p) (exit& T))
-                   (seq& (await& S) (exit& T))))]))
+              (par& (seq& (suspend& S (seq& p ...)) (exit& T))
+                    (seq& (await& S) (exit& T))))]))
 
 (define-esterel-form halt&
   (syntax-parser
