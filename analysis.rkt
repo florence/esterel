@@ -1,6 +1,9 @@
 #lang racket
+(provide loop-safe?)
 (require esterel/ast esterel/potentials)
-(define (loop-safe?)
+(define (signals-closed?) ;;TODO
+  (void))
+(define (loop-safe? p)
   (match p
     [(nothing) #t]
     [(pause) #t]
@@ -10,11 +13,13 @@
                    (loop-safe? p))]
     [(signal S p) (loop-safe? p)]
     [(emit S) #t]
+    [(suspend S p) (loop-safe? p)]
     [(present S then else) (and (loop-safe? then) (loop-safe? else))]
     [(trap T p) (loop-safe? p)]
     [(exit _) #t]
     ;; technically not needed
     [(sel _) #t]))
+
 (define/match (Ks p)
   [((nothing)) (set 0)]
   [((pause)) (set 1)]
@@ -24,13 +29,14 @@
   [((suspend S p)) (Ks p)]
   [((seq l r))
    (define k* (Ks l))
-   (if (set-member? 0 l)
+   (if (set-member? k* 0)
        (set-union (set-remove k* 0) (Ks r))
        k*)]
   [((loop p)) (set-remove (Ks p) 0)]
-  [((par l r)) (list->set (apply max (set->list (set-union (Ks l) (Ks r)))))]
-  [((trap T p)) (set-map harp (Ks p))]
+  [((par l r)) (set (apply max (set->list (set-union (Ks l) (Ks r)))))]
+  [((trap T p)) (list->set (set-map (Ks p) harp))]
   [((signal S p)) (Ks p)])
+
 (define/match (Kd p)
   [((nothing)) (set)]
   [((pause)) (set 0)]
@@ -49,7 +55,7 @@
           (set-union (set-remove Kd* 0) (Kd r))])]
   [((loop p)) (Kd (seq p p))]
   [((par l r)) (list->set (apply max (set->list (set-union (Kd l) (Kd r)))))]
-  [((trap T p)) (set-map harp (Kd p))]
+  [((trap T p)) (list->set (set-map harp (Kd p)))]
   [((signal S p)) (Kd p)])
 
 (define (harp k)

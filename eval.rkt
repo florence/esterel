@@ -1,4 +1,4 @@
-#lang racket
+#lang debug racket
 (provide eval)
 (require (submod esterel/ast))
 (require (submod esterel/potentials))
@@ -8,7 +8,8 @@
   [((nothing) E) (values p null 0)]
   [((exit T) E) (values p null T)]
   [((emit S) E) (values p (list S) 0)]
-  [((pause) E) (values (sel p) null 0)]
+  [((pause) E) (values (sel p) null 1)]
+  [((sel (pause)) E) (values (pause) null 0)]
   [((present S then else) E)
    (define (t)
      (define-values (p* S* k) (eval then E))
@@ -40,20 +41,20 @@
           (cond [(not (= 0 k)) (values (seq p* right) S* k)]
                 [else
                  (define-values (p** S** k*) (eval right E))
-                 (values (seq left p**) (append S* S**) k*)])])]
+                 (values (seq p* p**) (append S* S**) k*)])])]
   [((loop p) E)
    (define-values (p* S* k) (eval p E))
    ;; assumes valid prog where loops cannot be instantanious
-   (cond [(and (has-selected? p) (not (has-selected? p*)))
+   (cond [(not (has-selected? p*))
           (define-values (p** S** k*) (eval p* E))
-          (values (loop p**) (append S S**) k*)]
+          (values (loop p**) (append S* S**) (max k k*))]
          [else (values (loop p*) S* k)])]
   [((par left right) E)
    (define (b)
      (define-values (l* Sl kl) (eval left E))
      (define-values (r* Sr kr) (eval right E))
      (values (par l* r*) (append Sl Sr) (max kl kr)))
-   (match* ((has-selected? left) (has-selected? left))
+   (match* ((has-selected? left) (has-selected? right))
      [(#t #t) (b)]
      [(#t #f)
       (define-values (p* S* k) (eval left E))
@@ -69,15 +70,15 @@
          [(or (= k 0) (= k 2))
           (values (trap T (clear-selected p*)) S* 0)]
          [else
-          (values (trap T p*) S* (sub1) k)])]
+          (values (trap T p*) S* (sub1 k))])]
   [((signal S p) E)
-   (define-values (Sm Km) (must p (add (unknown S) E)))
+   (define-values (Sm Km) (must p (add (:unknown S) E)))
    (cond [(eq? 'present (get S Sm))
-          (define-values (p* S* k) (eval p (add (present S) E)))
+          (define-values (p* S* k) (eval p (add (:present S) E)))
           (values (signal S p*) (remove S S*) k)]
          ;; logically its actuall S not present in can*
          [else
-          (define-values (p* S* k) (eval p (add (absent S) E)))
+          (define-values (p* S* k) (eval p (add (:absent S) E)))
           (values (signal S p*) (remove S S*) k)])])
 
 (define (clear-selected p)
@@ -87,7 +88,8 @@
     [(seq left right) (seq (clear-selected left) (clear-selected right))]
     [(par left right) (par (clear-selected left) (clear-selected right))]
     [(loop p) (loop (clear-selected p))]
-    [(signal S p) (clear-selected p)]
+    [(suspend S p) (suspend S (clear-selected p))]
+    [(signal S p) (signal S (clear-selected p))]
     [(emit S) p]
     [(present S then else) (present S (clear-selected then) (clear-selected else))]
     [(trap T p) (trap T (clear-selected p))]

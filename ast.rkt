@@ -4,8 +4,8 @@
 (define-syntax (define-dt stx)
   (syntax-parse stx
     [(_ base (ba ...) (name (args ...)) ...)
-     #'(begin (struct base (ba ...))
-              (struct name base (args ...)) ...)]))
+     #'(begin (struct base (ba ...) #:transparent)
+              (struct name base (args ...) #:transparent) ...)]))
 (define-dt ast ()
   (nothing ())
   (pause ())

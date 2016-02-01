@@ -1,5 +1,5 @@
 #lang racket
-(provide must can can* rem get add)
+(provide must can can* rem get add has-selected?)
 (require esterel/ast)
 
 ;; Must
@@ -202,7 +202,7 @@
     [(:present _) 'present]
     [(:absent _) 'absent]
     [(:unknown _) 'unknown]
-    [#f (error "wat")]))
+    [#f (error 'presence "could not find evidence of signal ~a in ~a" S E)]))
 (define skip-selected (make-parameter #f))
 (define (has-selected? p)
   (if (skip-selected)
@@ -213,6 +213,7 @@
         [(seq left right) (or (has-selected? left) (has-selected? right))]
         [(par left right) (or (has-selected? left) (has-selected? right))]
         [(loop p) (has-selected? p)]
+        [(suspend S p) (has-selected? p)]
         [(signal S p) (has-selected? p)]
         [(emit S) #f]
         [(present S then else) (or (has-selected? then) (has-selected? else))]

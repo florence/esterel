@@ -1,0 +1,143 @@
+#lang racket
+(provide esterel-machine
+         eval-top
+         nothing&
+         exit&
+         emit&
+         pause&
+         present&
+         suspend&
+         seq&
+         loop&
+         par&
+         trap&
+         signal&
+         loop-each&
+         await&
+         machine-prog)
+(require esterel/transform esterel/analysis racket/stxparam racket/stxparam-exptime
+         esterel/analysis
+         (prefix-in est: esterel/eval)
+         (prefix-in node: esterel/ast)
+         (for-syntax syntax/parse racket/syntax ))
+
+(struct machine (prog valid-ins valid-outs)
+  #:reflection-name 'esterel-machine)
+
+(define (eval-top in-machine inputs)
+  ;;TODO check for valid inputs
+  (define vins (machine-valid-ins in-machine))
+  (define-values (p* outs _)
+    (est:eval (machine-prog in-machine)
+              (append
+               (map node::present inputs)
+               (map node::absent
+                    (filter-not (lambda (x) (member x inputs))
+                                vins)))))
+  (values
+   (list->set outs)
+   (machine
+    p*
+    vins
+    (machine-valid-outs in-machine))))
+
+(define-syntax-parameter in-machine #f)
+(define-syntax esterel-machine
+  (syntax-parser
+    [(_ #:inputs (in:id ...) #:outputs (out:id ...)
+        p)
+     ;; TODO lift analysis and transforms to compile time
+     #'(syntax-parameterize ([in-machine #t])
+         (let ([raw-prog p])
+           (when (not (loop-safe? p))
+             (error "program not loop safe"))
+           (define orig-prog (replace-I/O raw-prog '(in ...) '(out ...)))
+           (machine orig-prog '(in ...) '(out ...))))]))
+
+(define-syntax define-esterel-form
+  (syntax-parser
+    [(_ name:id val)
+     #'(define-syntax name (make-esterel-form val))]))
+(define-for-syntax (make-esterel-form f)
+  (lambda (stx)
+    (unless (syntax-parameter-value #'in-machine)
+      (raise-syntax-error #f "use of a esterel form not in a esterel machine" stx))
+    (f stx)))
+
+;;TODO could really use some implicit begins
+(define-esterel-form nothing&
+  (syntax-parser
+    [_:id #'(node:nothing)]))
+(define-esterel-form exit&
+  (syntax-parser
+    [(_ T:id)
+     #`(node:exit #,(get-exit-code #'T))]))
+(define-esterel-form emit&
+  (syntax-parser
+    [(_ S:id) #'(node:emit 'S)]))
+(define-esterel-form pause&
+  (syntax-parser
+    [_:id #'(node:pause)]))
+(define-esterel-form present&
+  (syntax-parser
+    [(a S:id th:expr) #'(a S th nothing&)]
+    [(_ S:id th:expr el:expr) #'(node:present 'S th el)]))
+(define-esterel-form suspend&
+  (syntax-parser
+    [(_ S:id p:expr) #'(node:suspend 'S p)]))
+(define-esterel-form seq&
+  (syntax-parser
+    [(_ l:expr r:expr) #'(node:seq l r)]))
+(define-esterel-form loop&
+  (syntax-parser
+    [(_ p:expr)
+     #'(node:loop p)]))
+(define-esterel-form par&
+  (syntax-parser
+    [(_ l:expr r:expr) #'(node:par l r)]))
+(define-esterel-form trap&
+  (syntax-parser
+    [(_ T:id p:expr)
+     #`(syntax-parameterize ([exit-stack (cons #'T (syntax-parameter-value #'exit-stack))])
+         (node:trap 'T p))]))
+(define-esterel-form signal&
+  (syntax-parser
+    [(_ S:id p:expr)
+     #'(node:signal 'S p)]))
+
+(define-esterel-form loop-each&
+  (syntax-parser
+    [(_ S p)
+     #'(loop&
+        (abort& S
+                (seq& p halt&)))]))
+
+(define-esterel-form abort&
+  (syntax-parser
+    [(_ S p)
+     (define/with-syntax T (generate-temporary (format-id #f "~a-abort-trap" #'S)))
+     #'(trap& T
+             (par& (seq& (suspend& S p) (exit& T))
+                   (seq& (await& S) (exit& T))))]))
+
+(define-esterel-form halt&
+  (syntax-parser
+    [_:id #'(loop& pause&)]))
+
+(define-esterel-form await&
+  (syntax-parser
+    [(_ S:id)
+     (define/with-syntax T (generate-temporary (format-id #f "~a-await-trap" #'S)))
+     #'(trap& T
+              (loop&
+               (seq&
+                pause&
+                (present& S (exit& T) nothing&))))]))
+
+
+(define-syntax-parameter exit-stack null)
+(define-for-syntax (get-exit-code T)
+  (+ 2
+     (for/sum ([k (syntax-parameter-value #'exit-stack)]
+               #:break (free-identifier=? T k))
+       1)))
