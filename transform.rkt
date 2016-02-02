@@ -8,12 +8,13 @@
       (signal new
               (par p
                    (loop (present old
-                                  (seq (emit new) (pause))))))))
+                                  (seq (emit new) (pause))
+                                  (pause)))))))
   (define new/outs
     (for/fold ([p new/ins]) ([(old new) (in-hash subbed-outs)])
       (signal new
               (par p
-                   (loop (present new (seq (emit old) (pause))))))))
+                   (loop (present new (seq (emit old) (pause)) (pause)))))))
   new/outs)
 (define (needed+sub p ins outs [ins-hash (hash)] [outs-hash (hash)])
   (define (recur p #:ins [in* ins-hash] #:outs [out* outs-hash])
@@ -54,6 +55,9 @@
               (values (emit nS) ins-hash outs-hash))]
            [(member S ins)
             (recur p #:ins (hash-set ins-hash S (gensym S)))]
+           [(hash-ref outs-hash S #f) =>
+            (lambda (nS)
+              (values (emit nS) ins-hash outs-hash))]
            [else (values p ins-hash outs-hash)])]
     [(present S then else)
      (cond [(hash-ref outs-hash S #f) =>
@@ -61,6 +65,9 @@
               (recur (present nS then else)))]
            [(member S outs)
             (recur p #:outs (hash-set outs-hash S (gensym S)))]
+           [(hash-ref ins-hash S #f) =>
+            (lambda (nS)
+              (recur (present nS then else)))]
            [else
             (define-values (l1 l2 l3) (recur then))
             (define-values (r1 r2 r3) (recur else #:ins l2 #:outs l3))

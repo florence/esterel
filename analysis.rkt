@@ -1,24 +1,35 @@
 #lang racket
-(provide loop-safe?)
+(provide loop-safe? loop-safe!)
 (require esterel/ast esterel/potentials)
 (define (signals-closed?) ;;TODO
   (void))
+(define (loop-safe! p)
+  (define c (loop-safe/node p))
+  (when c
+    (error 'loop-safety
+           "The following loop(s) could not be proven to be non instantaneous: ~a"
+           (apply ~v #:separator "\n" c))))
 (define (loop-safe? p)
+  (not (loop-safe/node p)))
+(define (loop-safe/node p)
   (match p
-    [(nothing) #t]
-    [(pause) #t]
-    [(seq left right) (and (loop-safe? left) (loop-safe? right))]
-    [(par left right) (and (loop-safe? left) (loop-safe? right))]
-    [(loop p) (and (not (set-member? (Ks p) 0))
-                   (loop-safe? p))]
-    [(signal S p) (loop-safe? p)]
-    [(emit S) #t]
-    [(suspend S p) (loop-safe? p)]
-    [(present S then else) (and (loop-safe? then) (loop-safe? else))]
-    [(trap T p) (loop-safe? p)]
-    [(exit _) #t]
+    [(nothing) #f]
+    [(pause) #f]
+    [(seq left right) (or (loop-safe/node left) (loop-safe/node right))]
+    [(par left right) (or (loop-safe/node left) (loop-safe/node right))]
+    [(loop p*)
+     (define c (loop-safe/node p*))
+     (if  (set-member? (Ks p*) 0)
+          (cons p (if c c null))
+          c)]
+    [(signal S p) (loop-safe/node p)]
+    [(emit S) #f]
+    [(suspend S p) (loop-safe/node p)]
+    [(present S then else) (or (loop-safe/node then) (loop-safe/node else))]
+    [(trap T p) (loop-safe/node p)]
+    [(exit _) #f]
     ;; technically not needed
-    [(sel _) #t]))
+    [(sel _) #f]))
 
 (define/match (Ks p)
   [((nothing)) (set 0)]

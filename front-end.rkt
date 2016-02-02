@@ -1,5 +1,6 @@
 #lang racket
 (provide esterel-machine
+         define-esterel-form
          eval-top
          nothing&
          exit&
@@ -48,11 +49,10 @@
   (syntax-parser
     [(_ #:inputs (in:id ...) #:outputs (out:id ...)
         p)
-     ;; TODO lift analysis and transforms to compile time
+     ;&; TODO lift analysis and transforms to compile time
      #'(syntax-parameterize ([in-machine #t])
          (let ([raw-prog p])
-           (when (not (loop-safe? p))
-             (error "program not loop safe"))
+           (loop-safe! p)
            (define orig-prog (replace-I/O raw-prog '(in ...) '(out ...)))
            (machine orig-prog '(in ...) '(out ...))))]))
 
@@ -66,7 +66,7 @@
       (raise-syntax-error #f "use of a esterel form not in a esterel machine" stx))
     (f stx)))
 
-;;TODO could really use some implicit begins
+;;TODO signals can interfier if they have the same name
 (define-esterel-form nothing&
   (syntax-parser
     [_:id #'(node:nothing)]))
@@ -97,7 +97,8 @@
      #'(node:loop (seq& p ...))]))
 (define-esterel-form par&
   (syntax-parser
-    [(_ l:expr r:expr) #'(node:par l r)]))
+    [(_ l:expr) #'l]
+    [(_ l:expr r:expr ...) #'(node:par l (par& r ...))]))
 (define-esterel-form trap&
   (syntax-parser
     [(_ T:id p:expr ...)
@@ -127,8 +128,14 @@
   (syntax-parser
     [_:id #'(loop& pause&)]))
 
+;; very large expansion, should use `repeat` when we have impure esterel
 (define-esterel-form await&
   (syntax-parser
+    [(a n:nat S:id)
+     (define c (syntax-e #'n))
+     (if (zero? c)
+         #'(a S)
+         #`(seq& (a S) (a #,(sub1 c) S)))]
     [(_ S:id)
      (define/with-syntax T (generate-temporary (format-id #f "~a-await-trap" #'S)))
      #'(trap& T
@@ -136,6 +143,10 @@
                (seq&
                 pause&
                 (present& S (exit& T) nothing&))))]))
+
+(define-esterel-form sustain&
+  (syntax-parser
+    [(_ S:id) #'(loop& (emit& S) pause&)]))
 
 
 (define-syntax-parameter exit-stack null)

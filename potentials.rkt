@@ -1,4 +1,4 @@
-#lang racket
+#lang debug racket
 (provide must can can* rem get add has-selected?)
 (require esterel/ast)
 
@@ -48,8 +48,8 @@
   [((signal S p) E)
    (define-values (S^ K) (must p (add (:unknown S) E)))
    (define-values (S*^ K*) (can* p (add (:unknown S) E)))
-   (cond [(eq? 'present (get S S^)) (must p (add (:present S) E))]
-         [(not (eq? 'present (get S S*^))) (must p (add (:absent S) E))]
+   (cond [(eq? 'present (get S S^ #f)) (must p (add (:present S) E))]
+         [(not (eq? 'present (get S S*^ #f))) (must p (add (:absent S) E))]
          [else (values S^ K)])]
   [((sel (pause)) E) (values null (list 0))])
   ;; Can
@@ -177,7 +177,9 @@
     (define-values (l1 l2) a)
     (define-values (r1 r2) b)
     (values (append l1 r1)
-            (list (apply max (append l2 r2))))))
+            (list (if (or (null? l2) (null? r2))
+                      null
+                      (apply max (append l2 r2)))))))
 (define-syntax-rule (U a b)
   (let ()
     (define-values (l1 l2) a)
