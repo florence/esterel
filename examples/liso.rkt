@@ -1,5 +1,6 @@
 #lang racket
 (require esterel/front-end (for-syntax syntax/parse))
+(module+ test (require "test-harness.rkt"))
 
 (define-esterel-form do-after-n&
   (syntax-parser
@@ -8,14 +9,14 @@
 
 (define lisinopril
   (esterel-machine
-   #:inputs (weight refill day bp-checked hour between-6-and-8-am took)
+   #:inputs (weight refill day bp-checked hour between-8-and-midnight took)
    #:outputs (check-weight please-refill please-check-bp please-take)
    (par&
     ;; taking lisinopril
     (signal& over-18-h
              (par&
-              (loop-each& took (await& 18 hour) (emit& over-18-h))
-              (loop& (present& between-6-and-8-am (present& over-18-h (emit& please-take)))
+              (loop-each& took (await& 18 hour) (sustain& over-18-h))
+              (loop& (present& between-8-and-midnight (present& over-18-h (emit& please-take)))
                      pause&)))
     ;; bp checking
     (loop-each& bp-checked
@@ -32,3 +33,13 @@
                 ;; day boundry when this occurs...
                 (await& 3 day)
                 (emit& check-weight)))))
+
+(module+ test
+  (test-seq
+   lisinopril
+   ;; assume we start at 6am
+   #:equivalence ([day => 24 hour])
+   (() ())
+   ((day) ())
+   ((day) (please-check-bp))
+   ((day) (check-weight))))

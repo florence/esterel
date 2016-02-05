@@ -17,6 +17,7 @@
          await&
          abort&
          halt&
+         sustain&
          machine-prog)
 (require esterel/transform esterel/analysis racket/stxparam racket/stxparam-exptime
          esterel/analysis
@@ -134,7 +135,7 @@
     [(a n:nat S:id)
      (define c (syntax-e #'n))
      (if (zero? c)
-         #'(a S)
+         #'nothing&
          #`(seq& (a S) (a #,(sub1 c) S)))]
     [(_ S:id)
      (define/with-syntax T (generate-temporary (format-id #f "~a-await-trap" #'S)))
