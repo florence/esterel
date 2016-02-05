@@ -23,7 +23,7 @@
          esterel/analysis
          (prefix-in est: esterel/eval)
          (prefix-in node: esterel/ast)
-         (for-syntax syntax/parse racket/syntax ))
+         (for-syntax syntax/parse racket/syntax racket/sequence racket/format))
 
 (struct machine (prog valid-ins valid-outs)
   #:reflection-name 'esterel-machine)
@@ -51,11 +51,18 @@
     [(_ #:inputs (in:id ...) #:outputs (out:id ...)
         p)
      ;&; TODO lift analysis and transforms to compile time
-     #'(syntax-parameterize ([in-machine #t])
-         (let ([raw-prog p])
-           (loop-safe! p)
-           (define orig-prog (replace-I/O raw-prog '(in ...) '(out ...)))
-           (machine orig-prog '(in ...) '(out ...))))]))
+     (define/with-syntax (out& ...)
+       (for/list ([id (in-syntax #'(out ...))])
+         (format-id id "~a&" id)))
+     #`(syntax-parameterize ([in-machine #t])
+         (let ()
+           (define-esterel-form out&
+             (syntax-parser
+               [_:id #'(emit& out)])) ...
+           (let ([raw-prog p])
+             (loop-safe! p)
+             (define orig-prog (replace-I/O raw-prog '(in ...) '(out ...)))
+             (machine orig-prog '(in ...) '(out ...)))))]))
 
 (define-syntax define-esterel-form
   (syntax-parser
@@ -66,6 +73,11 @@
     (unless (syntax-parameter-value #'in-machine)
       (raise-syntax-error #f "use of a esterel form not in a esterel machine" stx))
     (f stx)))
+
+(begin-for-syntax
+  (define-syntax-class msg
+    (pattern _:id)
+    (pattern (or _:id ...))))
 
 ;;TODO signals can interfier if they have the same name
 (define-esterel-form nothing&
@@ -83,11 +95,19 @@
     [_:id #'(node:pause)]))
 (define-esterel-form present&
   (syntax-parser
-    [(a S:id th:expr) #'(a S th nothing&)]
-    [(_ S:id th:expr el:expr) #'(node:present 'S th el)]))
+    [(_ (~or (or S:id) S:id) th:expr el:expr) #'(node:present 'S th el)]
+    [(p S:msg th:expr) #'(p S th nothing&)]
+    [(p (or S1:id S2:id ...) th:id el:expr)
+     #'(p S1 th (p (or S2 ...) th el))]
+    [(p (or S1:id S2:id ...) th:expr el:expr)
+     #'(let ([t th])
+         (p S1 t (p (or S2 ...) t el)))]))
 (define-esterel-form suspend&
   (syntax-parser
-    [(_ S:id p:expr ...) #'(node:suspend 'S (seq& p ...))]))
+    [(_ (~or (or S:id) S:id) p:expr ...)
+     #'(node:suspend 'S (seq& p ...))]
+    [(s (or S1:id S2:id ...) p:expr ...)
+     #'(s S1 (s (or S2 ...) p ...))]))
 (define-esterel-form seq&
   (syntax-parser
     [(_ p:expr) #'p]
@@ -108,19 +128,25 @@
 (define-esterel-form signal&
   (syntax-parser
     [(_ S:id p:expr ...)
-     #'(node:signal 'S (seq& p ...))]))
+     (define/with-syntax S& (format-id #'S "~a&" #'S))
+     #'(let ()
+         (define-esterel-form S&
+           (syntax-parser
+             [_:id #'(emit& S)]))
+         (node:signal 'S (seq& p ...)))]))
 
 (define-esterel-form loop-each&
   (syntax-parser
-    [(_ S:id p:expr ...)
+    [(_ S:msg p:expr ...)
      #'(loop&
         (abort& S
                 (seq& (seq& p ...) halt&)))]))
 
 (define-esterel-form abort&
   (syntax-parser
-    [(_ S:id p:expr ...)
-     (define/with-syntax T (generate-temporary (format-id #f "~a-abort-trap" #'S)))
+    [(_ S:msg p:expr ...)
+     (define/with-syntax T (generate-temporary (format-id #f "~a-abort-trap"
+                                                          (~a (syntax->datum #'S)))))
      #'(trap& T
               (par& (seq& (suspend& S (seq& p ...)) (exit& T))
                     (seq& (await& S) (exit& T))))]))
@@ -132,13 +158,14 @@
 ;; very large expansion, should use `repeat` when we have impure esterel
 (define-esterel-form await&
   (syntax-parser
-    [(a n:nat S:id)
+    [(a n:nat S:msg)
      (define c (syntax-e #'n))
      (if (zero? c)
          #'nothing&
          #`(seq& (a S) (a #,(sub1 c) S)))]
-    [(_ S:id)
-     (define/with-syntax T (generate-temporary (format-id #f "~a-await-trap" #'S)))
+    [(_ S:msg)
+     (define/with-syntax T (generate-temporary (format-id #f "~a-await-trap"
+                                                          (~a (syntax->datum #'S)))))
      #'(trap& T
               (loop&
                (seq&
@@ -147,7 +174,9 @@
 
 (define-esterel-form sustain&
   (syntax-parser
-    [(_ S:id) #'(loop& (emit& S) pause&)]))
+    [(_ S:msg) #'(loop& (emit& S) pause&)]))
+
+
 
 
 (define-syntax-parameter exit-stack null)
