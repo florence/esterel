@@ -163,10 +163,10 @@
    (define-values (Sm Km) (must p (add (:unknown S) E)))
    (define-values (S* K*) (can* p (add (:unknown S) E)))
    (cond
-     [(eq? 'present (get S Sm))
+     [(eq? 'present (get S Sm #f))
       (define-values (S^ K^) (can* p (add (:present S) E)))
       (values (remove S S^) K^)]
-     [(eq? 'present (get S S*))
+     [(eq? 'present (get S S* #f))
       (define-values (S^ K^) (can* p (add (:absent S) E)))
       (values (rem S S^) K^)]
      [else (values (rem S S*) K*)])]
@@ -177,9 +177,9 @@
     (define-values (l1 l2) a)
     (define-values (r1 r2) b)
     (values (append l1 r1)
-            (list (if (or (null? l2) (null? r2))
-                      null
-                      (apply max (append l2 r2)))))))
+            (if (or (null? l2) (null? r2))
+                null
+                (list (apply max (append l2 r2)))))))
 (define-syntax-rule (U a b)
   (let ()
     (define-values (l1 l2) a)

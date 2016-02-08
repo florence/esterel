@@ -45,6 +45,9 @@
     vins
     (machine-valid-outs in-machine))))
 
+(begin-for-syntax
+  (define signal-intro (make-syntax-introducer)))
+
 (define-syntax-parameter in-machine #f)
 (define-syntax esterel-machine
   (syntax-parser
@@ -56,13 +59,18 @@
          (format-id id "~a&" id)))
      #`(syntax-parameterize ([in-machine #t])
          (let ()
-           (define-esterel-form out&
-             (syntax-parser
-               [_:id #'(emit& out)])) ...
-           (let ([raw-prog p])
-             (loop-safe! p)
-             (define orig-prog (replace-I/O raw-prog '(in ...) '(out ...)))
-             (machine orig-prog '(in ...) '(out ...)))))]))
+           (let* ([in 'in] ...
+                  [out 'out] ...)
+             (define-esterel-form out&
+               (syntax-parser
+                 [_:id
+                  (define/with-syntax out* (quasisyntax/loc this-syntax out))
+                  #`(emit& out*)]))
+             ...
+             (let ([raw-prog p])
+               (loop-safe! p)
+               (define orig-prog (replace-I/O raw-prog '(in ...) '(out ...)))
+               (machine orig-prog '(in ...) '(out ...))))))]))
 
 (define-syntax define-esterel-form
   (syntax-parser
@@ -89,13 +97,13 @@
      #`(node:exit #,(get-exit-code #'T))]))
 (define-esterel-form emit&
   (syntax-parser
-    [(_ S:id) #'(node:emit 'S)]))
+    [(_ S:id) #'(node:emit S)]))
 (define-esterel-form pause&
   (syntax-parser
     [_:id #'(node:pause)]))
 (define-esterel-form present&
   (syntax-parser
-    [(_ (~or (or S:id) S:id) th:expr el:expr) #'(node:present 'S th el)]
+    [(_ (~or (or S:id) S:id) th:expr el:expr) #'(node:present S th el)]
     [(p S:msg th:expr) #'(p S th nothing&)]
     [(p (or S1:id S2:id ...) th:id el:expr)
      #'(p S1 th (p (or S2 ...) th el))]
@@ -105,7 +113,7 @@
 (define-esterel-form suspend&
   (syntax-parser
     [(_ (~or (or S:id) S:id) p:expr ...)
-     #'(node:suspend 'S (seq& p ...))]
+     #'(node:suspend S (seq& p ...))]
     [(s (or S1:id S2:id ...) p:expr ...)
      #'(s S1 (s (or S2 ...) p ...))]))
 (define-esterel-form seq&
@@ -129,10 +137,10 @@
   (syntax-parser
     [(_ S:id p:expr ...)
      (define/with-syntax S& (format-id #'S "~a&" #'S))
-     #'(let ()
+     #'(let ([S 'S])
          (define-esterel-form S&
            (syntax-parser
-             [_:id #'(emit& S)]))
+             [_:id #`(emit& #,(quasisyntax/loc this-syntax S))]))
          (node:signal 'S (seq& p ...)))]))
 
 (define-esterel-form loop-each&

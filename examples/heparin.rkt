@@ -17,7 +17,7 @@
 
 (define heparin
   (esterel-machine
-   #:inputs (appt<45 appt-45-49 aptt-59-101 aptt-101-123 aptt>123
+   #:inputs (aptt<45 aptt-45-59 aptt-59-101 aptt-101-123 aptt>123
                      hour minute)
    #:outputs (give-bolus increase decrease check-aptt hold restart start bad-aptt)
    (par&
@@ -40,14 +40,14 @@
           (after& aptt-101-123 decrease&)
           (after& aptt>123
                   hold&
-                  (after& 60 minutes
+                  (after& 60 minute
                           restart&
                           decrease&)))
          stop-waiting&
          pause&)
         (loop&
          (present& waiting
-                   (present& (or appt<45 appt-45-49 aptt-59-101 aptt-101-123 aptt>123)
+                   (present& (or aptt<45 aptt-45-59 aptt-59-101 aptt-101-123 aptt>123)
                              bad-aptt&))
          pause&))))
     ;; checking
@@ -55,14 +55,23 @@
      theraputic
      (par&
       (loop-each&
-       (or aptt<45 aptt-45-49 aptt-101-123 aptt>123)
+       (or aptt<45 aptt-45-59 aptt-101-123 aptt>123)
        (await& 2 aptt-59-101)
        (sustain& theraputic))
 
       (loop-each& check-aptt
                   (await& 6 hour)
-                  (present& threaputic nothing& check-aptt&))
+                  (present& theraputic nothing& check-aptt&))
 
       (loop-each& check-aptt
                   (await& 24 hour)
-                  (present& threaputic check-aptt&)))))))
+                  (present& theraputic check-aptt&)))))))
+
+
+(module+ test
+  (test-seq
+   heparin
+   #:equivalence ([hour => 60 minute])
+   (() (start give-bolus check-aptt))
+   ((aptt>123) (hold))
+   ((hour) (restart decrease))))
