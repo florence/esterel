@@ -7,7 +7,8 @@
     [(_ body ...)
      (define/with-syntax T (generate-temporary 'any-trap))
      #'(trap& T
-              (seq& body (exit& T)) ...)]))
+              (par&
+               (seq& body (exit& T)) ...))]))
 (define-esterel-form after&
   (syntax-parser
     [(_ n:nat S body ...)
