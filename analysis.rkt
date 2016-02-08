@@ -27,14 +27,14 @@
     [(suspend S p) (loop-safe/node p)]
     [(present S then else) (or (loop-safe/node then) (loop-safe/node else))]
     [(trap T p) (loop-safe/node p)]
-    [(exit _) #f]
+    [(exit _ _) #f]
     ;; technically not needed
     [(sel _) #f]))
 
 (define/match (Ks p)
   [((nothing)) (set 0)]
   [((pause)) (set 1)]
-  [((exit T)) (set T)]
+  [((exit _ T)) (set T)]
   [((emit S)) (set 0)]
   [((present S t e)) (set-union (Ks t) (Ks e))]
   [((suspend S p)) (Ks p)]
@@ -51,7 +51,7 @@
 (define/match (Kd p)
   [((nothing)) (set)]
   [((pause)) (set 0)]
-  [((exit T)) (set)]
+  [((exit _ T)) (set)]
   [((emit S)) (set)]
   [((present S t e)) (set-union (Ks t) (Ks e))]
   [((suspend S p)) (set-union 1 (Ks p))]

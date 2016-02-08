@@ -6,7 +6,7 @@
 ;; ast E -> ast S k
 (define/match (eval p E)
   [((nothing) E) (values p null 0)]
-  [((exit T) E) (values p null T)]
+  [((exit _ T) E) (values p null T)]
   [((emit S) E) (values p (list S) 0)]
   [((pause) E) (values (sel p) null 1)]
   [((sel (pause)) E) (values (pause) null 0)]
@@ -93,5 +93,5 @@
     [(emit S) p]
     [(present S then else) (present S (clear-selected then) (clear-selected else))]
     [(trap T p) (trap T (clear-selected p))]
-    [(exit _) p]
+    [(exit _ _) p]
     [(sel p) (clear-selected p)]))

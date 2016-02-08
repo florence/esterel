@@ -18,7 +18,7 @@
   (present (S then else))
   ;; TODO the t is actually not needed
   (trap (T p))
-  (exit (T))
+  (exit (N T))
   (sel (p)))
 
 (define-dt presence (S)

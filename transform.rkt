@@ -75,7 +75,7 @@
     [(trap T p)
      (define-values (a b c) (recur p))
      (values (trap T a) b c)]
-    [(exit _) (values p ins-hash outs-hash)]
+    [(exit _ _) (values p ins-hash outs-hash)]
     ;; technically not needed
     [(sel p)
      (define-values (a b c) (recur p))

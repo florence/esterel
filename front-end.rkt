@@ -18,7 +18,9 @@
          abort&
          halt&
          sustain&
-         machine-prog)
+         machine-prog
+         machine-valid-ins
+         machine-valid-outs)
 (require esterel/transform esterel/analysis racket/stxparam racket/stxparam-exptime
          esterel/analysis
          (prefix-in est: esterel/eval)
@@ -94,7 +96,7 @@
 (define-esterel-form exit&
   (syntax-parser
     [(_ T:id)
-     #`(node:exit #,(get-exit-code #'T))]))
+     #`(node:exit 'T #,(get-exit-code #'T))]))
 (define-esterel-form emit&
   (syntax-parser
     [(_ S:id) #'(node:emit S)]))

@@ -6,7 +6,7 @@
 (define/match (must ast E)
   [((nothing) _) (values null (list 0))]
   [((pause) _) (values null (list 1))]
-  [((exit T) _) (values null (list T))]
+  [((exit _ T) _) (values null (list T))]
   [((emit S) E) (values (list (:present S)) (list 0))]
   [((present S then else) _)
    (cond [(has-selected? then) (must then E)]
@@ -57,7 +57,7 @@
 (define/match (can ast E)
   [((nothing) _) (values null (list 0))]
   [((pause) _) (values null (list 1))]
-  [((exit k) _) (values null (list k))]
+  [((exit _ k) _) (values null (list k))]
   [((emit S) _) (values (list (:present S)) (list 0))]
   [((present S then else) _)
    (cond [(has-selected? then) (can then E)]
@@ -109,7 +109,7 @@
 (define/match (can* ast E)
   [((nothing) _) (values null (list 0))]
   [((pause) _) (values null (list 1))]
-  [((exit k) _) (values null (list k))]
+  [((exit _ k) _) (values null (list k))]
   [((emit S) _) (values (list (:present S)) (list 0))]
   [((present S then else) _)
    (cond [(has-selected? then) (can then E)]
@@ -224,7 +224,7 @@
         [(emit S) #f]
         [(present S then else) (or (has-selected? then) (has-selected? else))]
         [(trap T p) (has-selected? p)]
-        [(exit _) #f]
+        [(exit _ _) #f]
         [(sel _) #t])))
 (define-syntax-rule (without-selected e)
   (parameterize ([skip-selected #t])
