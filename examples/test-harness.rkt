@@ -34,22 +34,17 @@
          (define nstx
            (cond [(get-equiv i/o-pair) =>
                   (lambda (matching)
-                    (define bindings
-                      (append
-                       (list #`[(out next) (values (set) #,mach)])
-                       (for/list ([_ (in-range (car matching))])
-                         #`[(out next)
-                            (let ()
-                              (define-values (a b) (eval-top next '#,(cdr matching)))
-                              (values (set-union a out) b))])
-                       (list #'[(out next)
-                                (let ()
-                                  (define-values (a b) (eval-top next '(ins ...)))
-                                  (values (set-union a out) b))])))
+                    (define pass
+                      #`(let ()
+                          (for/fold ([out (set)] [next #,mach])
+                                    ([_ (in-range #,(car matching))])
+                            (define-values (a b) (eval-top next '#,(cdr matching)))
+                            (values (set-union a out) b))))
                     #`(begin
                         (define-values (out next)
-                          (let*-values (#,@bindings)
-                            (values out next)))
+                          (let-values ([(out next) #,pass])
+                            (define-values (a b) (eval-top next '(ins ...)))
+                            (values (set-union a out) b)))
                         #,(quasisyntax/loc i/o-pair
                             (check-equal? out (set 'outs ...)
                                           (~a '#,i/o-pair)))))]

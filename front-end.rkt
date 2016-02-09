@@ -58,7 +58,7 @@
      ;&; TODO lift analysis and transforms to compile time
      (define/with-syntax (out& ...)
        (for/list ([id (in-syntax #'(out ...))])
-         (format-id id "~a&" id)))
+         (syntax-property (format-id id "~a&" id #:source id) 'original-for-check-syntax #t)))
      #`(syntax-parameterize ([in-machine #t])
          (let ()
            (let* ([in 'in] ...
@@ -138,7 +138,8 @@
 (define-esterel-form signal&
   (syntax-parser
     [(_ S:id p:expr ...)
-     (define/with-syntax S& (format-id #'S "~a&" #'S))
+     (define/with-syntax S&
+       (syntax-property (format-id #'S "~a&" #'S #:source #'S) 'original-for-check-syntax #t) )
      #'(let ([S 'S])
          (define-esterel-form S&
            (syntax-parser
@@ -169,10 +170,8 @@
 (define-esterel-form await&
   (syntax-parser
     [(a n:nat S:msg)
-     (define c (syntax-e #'n))
-     (if (zero? c)
-         #'nothing&
-         #`(seq& (a S) (a #,(sub1 c) S)))]
+     #'(let ([R (a S)])
+         (await-R n R))]
     [(_ S:msg)
      (define/with-syntax T (generate-temporary (format-id #f "~a-await-trap"
                                                           (~a (syntax->datum #'S)))))
@@ -181,6 +180,14 @@
                (seq&
                 pause&
                 (present& S (exit& T) nothing&))))]))
+
+(define-esterel-form await-R
+  (syntax-parser
+    [(_ n:nat x:id)
+     (define c (syntax-e #'n))
+     (if (zero? c)
+         #'nothing&
+         #`(seq& x (await-R #,(sub1 c) x)))]))
 
 (define-esterel-form sustain&
   (syntax-parser
