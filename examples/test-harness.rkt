@@ -59,6 +59,7 @@
                       #|
                       (displayln 'new:)
                       (pretty-print (machine-prog next))
+                      (displayln "\n\n\n")
                       |#
                       #,(quasisyntax/loc i/o-pair
                           (check-equal? out (set 'outs ...)

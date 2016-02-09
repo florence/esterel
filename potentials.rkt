@@ -1,6 +1,7 @@
 #lang debug racket
 (provide must can can* rem get add has-selected?)
 (require esterel/ast)
+(module+ test (require rackunit))
 
 ;; Must
 (define/match (must ast E)
@@ -33,10 +34,10 @@
   [((loop p) E)
    (define-values (S K) (must p E))
    (cond [(has-selected? p)
-          (if (member 0 K)
+          (if (not (member 0 K))
               (values S K)
-              (let-values ([(S* _) (without-selected (must p E))])
-                (values (append S* S) K)))]
+              (let-values ([(S* K^) (without-selected (must p E))])
+                (values (append S* S) K^)))]
          [else (values S K)])]
   [((par l r) E)
    (match* ((has-selected? l) (has-selected? r))
@@ -44,15 +45,43 @@
      [(#t #f) (must l E)]
      [(#f #t) (must r E)]
      [(#f #f) (U/max (must l E) (must r E))])]
-  [((trap T p) E) (harp (must p E))]
+  [((trap T p) E)
+   (harp (must p E))]
   [((signal S p) E)
    (define-values (S^ K) (must p (add (:unknown S) E)))
    (define-values (S*^ K*) (can* p (add (:unknown S) E)))
    (cond [(eq? 'present (get S S^ #f)) (must p (add (:present S) E))]
          [(not (eq? 'present (get S S*^ #f))) (must p (add (:absent S) E))]
          [else (values S^ K)])]
-  [((sel (pause)) E) (values null (list 0))])
-  ;; Can
+  [((sel (pause)) E)
+   (if (skip-selected)
+       (values null (list 1))
+       (values null (list 0)))])
+
+(module+ test
+  (let ()
+    (define-values (S K)
+      (must (seq (pause)
+                 (present 'hour (exit 'hour-await-trap26 2) (nothing)))
+            (list (:unknown 'check-aptt1671770) (:present 'minute) (:absent 'hour))))
+    (check-equal? S '())
+    (check-equal? K '(1)))
+  (let ()
+    (define-values (S K)
+      (without-selected
+       (must (seq (sel (pause))
+                  (present 'hour (exit 'hour-await-trap26 2) (nothing)))
+             (list (:unknown 'check-aptt1671770) (:present 'minute) (:absent 'hour)))))
+    (check-equal? S '())
+    (check-equal? K '(1)))
+  (let ()
+    (define-values (S K)
+      (must (loop (seq (sel (pause))
+                       (present 'hour (exit 'hour-await-trap26 2) (nothing))))
+            (list (:unknown 'check-aptt1671770) (:present 'minute) (:absent 'hour))))
+    (check-equal? S '())
+    (check-equal? K '(1))))
+;; Can
 
 (define/match (can ast E)
   [((nothing) _) (values null (list 0))]
@@ -85,7 +114,7 @@
   [((loop p) E)
    (define-values (S K) (can p E))
    (cond [(has-selected? p)
-          (if (member 0 K)
+          (if (not (member 0 K))
               (values S K)
               (let-values ([(S* K*) (without-selected (can p E))])
                 (values (append S S*) (append (remove 0 K) K*))))]
