@@ -33,6 +33,7 @@
 (define (eval-top in-machine inputs)
   ;;TODO check for valid inputs
   (define vins (machine-valid-ins in-machine))
+  (define vouts (machine-valid-outs in-machine))
   (define-values (p* outs _)
     (est:eval (machine-prog in-machine)
               (append
@@ -41,7 +42,7 @@
                     (filter-not (lambda (x) (member x inputs))
                                 vins)))))
   (values
-   (list->set outs)
+   (list->set (filter (lambda (x) (member x vouts)) outs))
    (machine
     p*
     vins

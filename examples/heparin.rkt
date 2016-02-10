@@ -42,7 +42,10 @@
      (signal&
       stop-waiting
       (par&
-       (loop-each& check-aptt (abort& stop-waiting (sustain& waiting)))
+       (loop-each& check-aptt
+                   (await& (or aptt<45 aptt-45-59 aptt-59-101 aptt-101-123 aptt>123))
+                   pause&
+                   (abort& stop-waiting (sustain& waiting)))
        (loop&
         ;; a bit weird, b/c we are using many signals rather than one value
         ;; carying signal. but we assume all the signals are mutually exclusive
@@ -53,7 +56,7 @@
          (after& aptt-101-123 decrease&)
          (after& aptt>123
                  hold&
-                 (after& 60 minute
+                 (after& 59 minute
                          restart&
                          decrease&)))
         stop-waiting&
@@ -92,7 +95,7 @@
 
   (test-seq
    heparin
-   #:equivalence ([hour => 60 minutes])
+   #:equivalence ([hour => 60 minute])
    (() (start give-bolus ;check-aptt known to fail
               ))
    ((aptt<45) (give-bolus increase))
