@@ -93,20 +93,20 @@
 ;;TODO signals can interfier if they have the same name
 (define-esterel-form nothing&
   (syntax-parser
-    [_:id #'(node:nothing)]))
+    [_:id #'(node:make-nothing)]))
 (define-esterel-form exit&
   (syntax-parser
     [(_ T:id)
-     #`(node:exit 'T #,(get-exit-code #'T))]))
+     #`(node:make-exit 'T #,(get-exit-code #'T))]))
 (define-esterel-form emit&
   (syntax-parser
-    [(_ S:id) #'(node:emit S)]))
+    [(_ S:id) #'(node:make-emit S)]))
 (define-esterel-form pause&
   (syntax-parser
-    [_:id #'(node:pause)]))
+    [_:id #'(node:make-pause)]))
 (define-esterel-form present&
   (syntax-parser
-    [(_ (~or (or S:id) S:id) th:expr el:expr) #'(node:present S th el)]
+    [(_ (~or (or S:id) S:id) th:expr el:expr) #'(node:make-present S th el)]
     [(p S:msg th:expr) #'(p S th nothing&)]
     [(p (or S1:id S2:id ...) th:id el:expr)
      #'(p S1 th (p (or S2 ...) th el))]
@@ -116,26 +116,26 @@
 (define-esterel-form suspend&
   (syntax-parser
     [(_ (~or (or S:id) S:id) p:expr ...)
-     #'(node:suspend S (seq& p ...))]
+     #'(node:make-suspend S (seq& p ...))]
     [(s (or S1:id S2:id ...) p:expr ...)
      #'(s S1 (s (or S2 ...) p ...))]))
 (define-esterel-form seq&
   (syntax-parser
     [(_ p:expr) #'p]
-    [(_ l:expr r:expr ...) #'(node:seq l (seq& r ...))]))
+    [(_ l:expr r:expr ...) #'(node:make-seq l (seq& r ...))]))
 (define-esterel-form loop&
   (syntax-parser
     [(_ p:expr ...)
-     #'(node:loop (seq& p ...))]))
+     #'(node:make-loop (seq& p ...))]))
 (define-esterel-form par&
   (syntax-parser
     [(_ l:expr) #'l]
-    [(_ l:expr r:expr ...) #'(node:par l (par& r ...))]))
+    [(_ l:expr r:expr ...) #'(node:make-par l (par& r ...))]))
 (define-esterel-form trap&
   (syntax-parser
     [(_ T:id p:expr ...)
      #`(syntax-parameterize ([exit-stack (cons #'T (syntax-parameter-value #'exit-stack))])
-         (node:trap 'T (seq& p ...)))]))
+         (node:make-trap 'T (seq& p ...)))]))
 (define-esterel-form signal&
   (syntax-parser
     [(_ S:id p:expr ...)
@@ -145,7 +145,7 @@
          (define-esterel-form S&
            (syntax-parser
              [_:id #`(emit& #,(quasisyntax/loc this-syntax S))]))
-         (node:signal 'S (seq& p ...)))]))
+         (node:make-signal 'S (seq& p ...)))]))
 
 (define-esterel-form loop-each&
   (syntax-parser

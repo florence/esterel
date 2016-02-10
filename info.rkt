@@ -6,3 +6,5 @@
 (define deps
   '("base" "rackunit-lib"))
 (define build-deps '("debug"))
+
+(define test-omit-paths '("examples/causality.rkt"))

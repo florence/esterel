@@ -30,37 +30,37 @@
 
 (define (->esterel p)
   (match p
-    [(nothing) (do-print "nothing")]
-    [(pause) (do-print "pause")]
-    [(seq left right)
+    [(nothing _) (do-print "nothing")]
+    [(pause _) (do-print "pause")]
+    [(seq _ left right)
      (->esterel left)
      (do-print "\n")
      (do-print " ;\n")
      (->esterel right)]
-    [(par left right)
+    [(par _ left right)
      (inc-indent
       (->esterel left))
      (do-print "\n")
      (do-print "||\n")
      (inc-indent
       (->esterel right))]
-    [(loop p*)
+    [(loop _ p*)
      (do-print "loop\n")
      (inc-indent (->esterel p*))
      (do-print "\n")
      (do-print "end loop\n")]
-    [(signal S p)
+    [(signal _ S p)
      (do-print "signal " (to-esterel-name S) " in\n")
      (inc-indent (->esterel p))
      (do-print "\n")
      (do-print "end signal\n")]
-    [(emit S) (do-print "emit " (to-esterel-name S))]
-    [(suspend S p)
+    [(emit _ S) (do-print "emit " (to-esterel-name S))]
+    [(suspend _ S p)
      (do-print "suspend\n")
      (inc-indent (->esterel p))
      (do-print "\n")
      (do-print "when " (to-esterel-name S) "\n")]
-    [(present S then else)
+    [(present _ S then else)
      (do-print "present " (to-esterel-name S) " then\n")
      (inc-indent (->esterel then))
      (do-print "\n")
@@ -68,12 +68,12 @@
      (inc-indent (->esterel else))
      (do-print "\n")
      (do-print "end\n")]
-    [(trap T p)
+    [(trap _ T p)
      (do-print "trap " (to-esterel-name T) " in\n")
      (inc-indent (->esterel p))
      (do-print "\n")
      (do-print "end trap\n")]
-    [(exit T _) (do-print "exit " (to-esterel-name T))]))
+    [(exit _ T _) (do-print "exit " (to-esterel-name T))]))
 
 (define (do-print . p)
   (for ([_ (indent)]) (display " "))
