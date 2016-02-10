@@ -215,4 +215,13 @@
    ((hour) ())
    ((hour) ())
    ((hour) ())
-   ((hour) (check-aptt))))
+   ((hour) (check-aptt)))
+
+  (test-seq
+   heparin
+   #:equivalence ([hour => 60 minute])
+   (() (start give-bolus ;check-aptt known to fail
+              ))
+   ((aptt>123) (hold))
+   ((aptt>123) (bad-aptt))
+   ((hour) (restart decrease))))
