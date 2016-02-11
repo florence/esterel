@@ -13,7 +13,7 @@
                     #:defaults ([(x 1) null]
                                 [(n 1) null]
                                 [(y 1) null]))
-         (~and ops ((ins ...) (outs ...))) ...))
+         (~and ops ((ins:id ...) (outs:id ...))) ...))
 
 
      
@@ -37,16 +37,16 @@
                     (define pass
                       #`(let ()
                           (for/fold ([out (set)] [next #,mach])
-                                    ([_ (in-range #,(car matching))])
+                                    ([_ (in-range (sub1 #,(car matching)))])
                             (define-values (a b) (eval-top next '#,(cdr matching)))
                             (values (set-union a out) b))))
                     #`(begin
                         (define-values (out next)
                           (let-values ([(out next) #,pass])
-                            (define-values (a b) (eval-top next '(ins ...)))
+                            (define-values (a b) (eval-top next '(#,(cdr matching) ins ...)))
                             (values (set-union a out) b)))
                         #,(quasisyntax/loc i/o-pair
-                            (check-equal? out (set 'outs ...)
+                            (check-equal? out (set  'outs ...)
                                           (~a '#,i/o-pair)))))]
                  [else
                   #`(begin

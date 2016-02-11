@@ -1,5 +1,6 @@
 #lang racket
 (require esterel/front-end (for-syntax syntax/parse racket/syntax racket/sequence))
+(module+ test (require "test-harness.rkt"))
 
 (define-esterel-form with-queries&
   (syntax-parser
@@ -17,19 +18,18 @@
          (let ([T& (present& history nothing& (emit& T_send))] ...
                [T T_send] ...)
            (par& query ...))
-         (seq&
-          (suspend&
-           history
-           pause&
-           (signal&
-            (T ...)
+         (suspend&
+          history
+          (present& history pause&)
+          (signal&
+           (T ...)
+           (par&
+            (seq& body ...)
             (par&
-             (seq& body ...)
-             (par&
-              (loop&
-               (present& T_send (emit& T))
-               pause&)
-              ...)))))))]))
+             (loop&
+              (present& T_send (emit& T))
+              pause&)
+             ...))))))]))
 
 (define-esterel-form query&
   (syntax-parser
@@ -83,9 +83,9 @@
        ;; breakthrough
        (par&
         ;; this even implicitly handles "ignoring" extrainious values
-        (every& painscore<3
+        (every& painscore>8
                 increase&
-                (await& 60 minute)
+                (await& 59 minute);; /grumble off by 1
                 check-painscore&)
         (every& painscore-trend-up notify-doctor&))
        ;; minimal
@@ -94,3 +94,23 @@
        (par&
         (every& vital-sign-recording check-painscore&)
         (every& pulse-ox<92 notify-doctor&)))))))
+
+
+(module+ test
+  (test-seq
+   popa
+   #:equivalence ([hour => 60 minute]
+                  [painscore>8 => 1 painscore>3]
+                  [painscore<3 => 1 painscore<8])
+   ([] [start set])
+   ([painscore>8] [increase])
+   ([hour] [check-painscore])
+   ([painscore<3] [])
+   ([painscore<3] [])
+   ([painscore<3] [])
+   ([hour] [])
+   ([hour] [])
+   ([painscore<3] [])
+   ([hour] [])
+   ([hour] [])
+   ([painscore<3] [decrease])))
