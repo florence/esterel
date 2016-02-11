@@ -113,4 +113,48 @@
    ([painscore<3] [])
    ([hour] [])
    ([hour] [])
+   ([painscore<3] [decrease]))
+  (test-seq
+   popa
+   #:equivalence ([hour => 60 minute]
+                  [painscore>8 => 1 painscore>3]
+                  [painscore<3 => 1 painscore<8])
+   ([] [start set])
+   ([vital-sign-recording] [check-painscore])
+   ([pulse-ox<92] [notify-doctor]))
+  (test-seq
+   popa
+   #:equivalence ([hour => 60 minute]
+                  [painscore>8 => 1 painscore>3]
+                  [painscore<3 => 1 painscore<8])
+
+   ([] [start set])
+   ([painscore>8] [increase])
+   ([hour] [check-painscore])
+   ([painscore<3] [])
+   ([painscore<3] [])
+   ([painscore<3] [])
+   ([hour] [])
+   ([hour] [])
+   ([painscore<3] [])
+   ([hour] [])
+   ([hour] [])
+   ([painscore<3] [decrease])
+   ([painscore<3] [])
+   ([painscore<3] [])
+   ([painscore<3] [])
+   ([hour] [])
+   ([hour] [])
+   ([painscore<3] [])
+   ([hour] [])
+   ([hour] [])
+   ([painscore<3] [decrease])
+   ([painscore<3] [])
+   ([painscore<3] [])
+   ([painscore<3] [])
+   ([hour] [])
+   ([hour] [])
+   ([painscore<3] [])
+   ([hour] [])
+   ([hour] [])
    ([painscore<3] [decrease])))
