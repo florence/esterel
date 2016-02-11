@@ -18,9 +18,11 @@
          abort&
          halt&
          sustain&
+         every&
          machine-prog
          machine-valid-ins
-         machine-valid-outs)
+         machine-valid-outs
+         (for-syntax msg))
 (require esterel/transform esterel/analysis racket/stxparam racket/stxparam-exptime
          esterel/analysis
          (prefix-in est: esterel/eval)
@@ -138,6 +140,10 @@
          (node:make-trap 'T (seq& p ...)))]))
 (define-esterel-form signal&
   (syntax-parser
+    [(s (S:id) p:expr ...)
+     #'(s S p ...)]
+    [(s (S_1:id S:id ...) p:expr ...)
+     #'(s S_1 (s (S ...) p ...))]
     [(_ S:id p:expr ...)
      (define/with-syntax S&
        (syntax-property (format-id #'S "~a&" #'S #:source #'S) 'original-for-check-syntax #t) )
@@ -194,6 +200,10 @@
   (syntax-parser
     [(_ S:msg) #'(loop& (emit& S) pause&)]))
 
+(define-esterel-form every&
+  (syntax-parser
+    [(_ S:msg p:expr ...)
+     #'(seq& (await& S) (loop-each& S p ...))]))
 
 
 

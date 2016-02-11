@@ -75,29 +75,33 @@
        (await& 2 aptt-59-101)
        (sustain& theraputic))
 
-      (loop-each/no-suspend& check-aptt
-                             (await& 6 hour);; should actually be 6*60 minutes?
-                             (present& theraputic nothing& check-aptt&))
+      ;; this probably has the wrong behavior
+      ;; IF check-aptt is also an input signal
+      (loop-each/no-suspend&
+       check-aptt
+       (loop&
+        (present& theraputic nothing& check-aptt&)
+        (await& 6 hour)));; should actually be 6*60 minutes?
 
-      (loop-each/no-suspend& check-aptt
-                             (await& 24 hour)
-                             (present& theraputic check-aptt&)))))))
+      (loop-each/no-suspend&
+       check-aptt
+       (loop&
+        (present& theraputic check-aptt&)
+        (await& 24 hour))))))))
 
 
 (module+ test
   (test-seq
    heparin
    #:equivalence ([hour => 60 minute])
-   (() (start give-bolus ;check-aptt known to fail
-              ))
+   (() (start give-bolus check-aptt))
    ((aptt>123) (hold))
    ((hour) (restart decrease)))
 
   (test-seq
    heparin
    #:equivalence ([hour => 60 minute])
-   (() (start give-bolus ;check-aptt known to fail
-              ))
+   (() (start give-bolus check-aptt))
    ((aptt<45) (give-bolus increase))
    ;; 6 hours
    ((hour) ())
@@ -220,8 +224,7 @@
   (test-seq
    heparin
    #:equivalence ([hour => 60 minute])
-   (() (start give-bolus ;check-aptt known to fail
-              ))
+   (() (start give-bolus check-aptt))
    ((aptt>123) (hold))
    ((aptt>123) (bad-aptt))
    ((hour) (restart decrease))))
