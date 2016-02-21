@@ -37,35 +37,30 @@
     ;; initially
     (seq& start& give-bolus&)
     ;; infusion
-    (signal&
-     waiting
-     (signal&
-      stop-waiting
-      (par&
-       (loop-each& check-aptt
-                   (await& (or aptt<45 aptt-45-59 aptt-59-101 aptt-101-123 aptt>123))
-                   pause&
-                   (abort& stop-waiting (sustain& waiting)))
-       (loop&
-        ;; a bit weird, b/c we are using many signals rather than one value
-        ;; carying signal. but we assume all the signals are mutually exclusive
-        (any&
-         (after& aptt<45 give-bolus& increase&)
-         (after& aptt-45-59 give-bolus& increase&)
-         (after& aptt-59-101)
-         (after& aptt-101-123 decrease&)
-         (after& aptt>123
-                 hold&
-                 (after& 59 minute
-                         restart&
-                         decrease&)))
-        stop-waiting&
-        pause&)
-       (loop&
-        (present& waiting
+    (par&
+     (loop-each& check-aptt
+                 (await& (or aptt<45 aptt-45-59 aptt-59-101 aptt-101-123 aptt>123))
+                 pause&
+                 (loop&
                   (present& (or aptt<45 aptt-45-59 aptt-59-101 aptt-101-123 aptt>123)
-                            bad-aptt&))
-        pause&))))
+                            (emit& bad-aptt))
+                  pause&))
+     ;; i dont know what the behavior on duplicate check-aptt signals should be
+     ;; so, uh, i picked one.
+     (loop&
+      ;; a bit weird, b/c we are using many signals rather than one value
+      ;; carying signal. but we assume all the signals are mutually exclusive
+      (any&
+       (after& aptt<45 give-bolus& increase&)
+       (after& aptt-45-59 give-bolus& increase&)
+       (after& aptt-59-101)
+       (after& aptt-101-123 decrease&)
+       (after& aptt>123
+               hold&
+               (after& 59 minute
+                       restart&
+                       decrease&)))
+      (await& check-aptt)))
     ;; checking
     (signal&
      theraputic
@@ -91,6 +86,21 @@
 
 
 (module+ test
+  (test-seq
+   heparin
+   #:equivalence ([hour => 60 minute])
+   (() (start give-bolus check-aptt))
+   ((aptt-59-101) ())
+   ((aptt-101-123) (bad-aptt)))
+
+  (test-seq
+   heparin
+   #:equivalence ([hour => 60 minute])
+   (() (start give-bolus check-aptt))
+   ((aptt>123) (hold))
+   ((hour) (restart decrease))
+   ((aptt>123) (bad-aptt)))
+
   (test-seq
    heparin
    #:equivalence ([hour => 60 minute])

@@ -13,10 +13,10 @@
    #:outputs (check-weight please-refill please-check-bp please-take)
    (par&
     ;; taking lisinopril
-    (signal& over-18-h
+    (signal& over-20-h
              (par&
-              (loop-each& took (await& 18 hour) (sustain& over-18-h))
-              (loop& (present& between-8-and-midnight (present& over-18-h (emit& please-take)))
+              (loop-each& took (await& 20 hour) (sustain& over-20-h))
+              (loop& (present& between-8-and-midnight (present& over-20-h (emit& please-take)))
                      pause&)))
     ;; bp checking
     (loop-each& bp-checked
