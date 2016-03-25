@@ -41,7 +41,7 @@
         #:auto-restart auto:boolean)
      #`(loop-each&
         z
-        (#,(if (syntax-e #'auto) #'loop& #'values)
+        (#,(if (syntax-e #'auto) #'loop& #'seq&)
          #,@(for/list ([_ (sub1 (syntax-e #'times))])
               #`(seq&
                  (await& x)
@@ -82,11 +82,11 @@
       (par&
        ;; breakthrough
        (par&
-        ;; this even implicitly handles "ignoring" extrainious values
-        (every& painscore>8
-                increase&
-                (await& 59 minute);; /grumble off by 1
-                check-painscore&)
+        ;; this even implicitly handles "ignoring" extraneous values
+        (loop& (await& painscore>8)
+               increase&
+               (await& 59 minute);; /grumble off by 1
+               check-painscore&)
         (every& painscore-trend-up notify-doctor&))
        ;; minimal
        (every& painscore-trend-down decrease&)

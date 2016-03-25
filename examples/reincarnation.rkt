@@ -11,6 +11,7 @@
      pause&
      (emit& S)
      (present& S (emit& O1) (emit& O2))))))
+
 (module+ test
   (test-seq
    reincarnation1

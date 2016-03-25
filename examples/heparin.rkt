@@ -72,17 +72,15 @@
 
       ;; this probably has the wrong behavior
       ;; IF check-aptt is also an input signal
-      (loop-each/no-suspend&
-       check-aptt
-       (loop&
-        (present& theraputic nothing& check-aptt&)
-        (await& 6 hour)));; should actually be 6*60 minutes?
-
-      (loop-each/no-suspend&
-       check-aptt
-       (loop&
-        (present& theraputic check-aptt&)
-        (await& 24 hour))))))))
+      (loop&
+       (trap& checking
+              (par& (seq& (await& check-aptt) (exit& checking))
+                    (loop&
+                     (present& theraputic nothing& check-aptt&)
+                     (await& 6 hour));; should actually be 6*60 minutes?
+                    (loop&
+                     (present& theraputic check-aptt&)
+                     (await& 24 hour))))))))))
 
 
 (module+ test
