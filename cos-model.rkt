@@ -58,15 +58,14 @@
 
   (lstat none stop go)
   (pstat ⊥ l k)
-  ((l k) natural)
+  ((l k m) natural)
   (sstat ⊥ present absent))
 
 (define-extended-language esterel-eval esterel
   ;(m P E Ss k data)
   (E ((S sstat) ...))
   (e ⊥ S)
-  ((k l) .... ⊥)
-  (m k)
+  ((k l m) .... ⊥)
   (data (data-elem ...))
   (data-elem (v datum)
              (v datum shared-stat))
@@ -74,7 +73,7 @@
 
 (define-judgment-form esterel-eval
   #:mode     (→ I       I    I O       O O O)
-  #:contract (→ pdotdot data E pdotdot e m data)
+  #:contract (→ pdotdot data E pdotdot e k data)
   #|
   [------------
   ""
@@ -97,7 +96,7 @@
    (→ (· (seq pbar q)) data E
       (seq (· pbar) q) ⊥ ⊥ data)]
   [(→ pdot data E pdotdot e k data_*)
-   (side-condition ,(not (= `k 0)))
+   (side-condition ,(not (equal? `k 0)))
    ------------
    "5"
    (→ (seq pdot q) data E
@@ -144,7 +143,7 @@
   "14"
   (→ (par pdot ⊥ qdotdot m) data E
      (par pdotdot k qdotdot m) e ⊥ data_*)]
-  [(→ qdot data E pdotdot e k data_*)
+  [(→ qdot data E qdotdot e k data_*)
    ------------
   "15"
   (→ (par pdotdot m qdot ⊥) data E
@@ -152,8 +151,8 @@
 
 (module+ test
   (define (do t [E `()] [data `()])
-    (judgment-holds (→ ,t ,E ,data pdotdot e K data_*)
-                    (pdotdot e K data_*)))
+    (judgment-holds (→ ,t ,E ,data pdotdot e k data_*)
+                    (pdotdot e k data_*)))
   (test-case "1"
     (test-equal (do `(· nothing))
                 `((nothing ⊥ 0 ()))))
@@ -242,7 +241,64 @@
   (test-case "13"
     (test-equal
      (do `(par pause 0 (hat pause) 1))
-     `(( (par pause (hat pause)) ⊥ 1 ())))))
+     `(( (par pause (hat pause)) ⊥ 1 ()))))
+  (test-case "14"
+    (test-equal
+     (do `(par (· (seq pause pause)) ⊥ pause 0))
+     `(( (par (seq (· pause) pause) ⊥ pause 0) ⊥ ⊥ ()))))
+  (test-case "15"
+    (test-equal
+     (do `(par pause 0 (· (seq pause pause)) ⊥))
+     `(( (par pause 0 (seq (· pause) pause) ⊥) ⊥ ⊥ ()))))
+  (test-case "14/15"
+    (test-equal
+     (do `(par (· (seq pause pause)) ⊥ (· (seq pause pause)) ⊥))
+     `(( (par (seq (· pause) pause) ⊥ (· (seq pause pause)) ⊥) ⊥ ⊥ ())
+       ( (par (· (seq pause pause)) ⊥ (seq (· pause) pause) ⊥) ⊥ ⊥ ()))))
+  )
+
+(define-judgment-form esterel-eval
+  #:mode     (→* I       I    I O       O O O)
+  #:contract (→* pdotdot data E pdotdot e k data)
+  [(→ pdotdot data E
+      pdotdot_* e k data)
+   -----------
+   (→* pdotdot data E
+       pdotdot_* e k data)]
+  [(→ pdotdot data E
+              pdotdot_* _ ⊥ data_*)
+   (→* pdotdot_* data_* E
+       pdotdot_** e k data_**)
+   -----------
+   (→* pdotdot data E
+       pdotdot_** e k data_**)])
+
+(define-judgment-form esterel-eval
+  ;; constructive ->>
+  #:mode (c->> I O O)
+  #:contract (c->> pbar qbar k)
+  [(→* (· pbar) () () pbar_* e k data_*)
+   (side-condition ,(not (equal? `k `⊥)))
+   -------
+   (c->> pbar pbar_* k)])
+
+(define-extended-language check-par esterel-eval
+  (p-check
+   nothing
+   pause
+   (seq p-check p-check)
+   (par  p-check p-check))
+  (phat-check
+   (hat pause)
+   (seq phat-check p-check)
+   (par phat-check phat-check)))
+
+(module+ test
+  ;(current-traced-metafunctions 'all)
+  (redex-check
+   check-par p-check
+   (judgment-holds (c->> p-check pbar k))
+   #:attempts 1000))
 
 
 #|
