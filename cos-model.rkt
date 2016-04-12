@@ -215,13 +215,13 @@
        (trap T phat) e 1 data_*)]
 
    [(→ pdot E data
-       phat ⊥ k data)
+       pbar ⊥ k data)
     (side-condition
-     ,(and (number? k) (>= k 3)))
+     ,(and (number? `k) (>= `k 3)))
    ------------
    "26"
    (→  (trap T pdot) E data
-       (trap T phat) ⊥ (↓ k) data)]
+       (trap T pbar) ⊥ (↓ k) data)]
 
    [------------
    "27"
@@ -382,11 +382,24 @@
      (do `(trap t (seq pause (· pause))))
      `(( (trap t (seq pause (hat pause))) ⊥ 1 ()))))
   (test-case "26"
-    (do `(trap t2 (· (exit 3))))
-    `(( `(trap t2 (exit 3)) ⊥ 2 ())))
+    (test-equal
+     (do `(trap t2 (· (exit 3))))
+     `(( `(trap t2 (exit 3)) ⊥ 2 ()))))
   (test-case "27"
-    (do `(· (exit 3)))
-    `(( (exit 3) ⊥ 3 ()))))
+    (test-equal
+     (do `(· (exit 3)))
+     `(( (exit 3) ⊥ 3 ()))))
+
+
+
+
+  (test-case "bugs"
+    (test-equal (do `(· (par nothing nothing)))
+                `(( (par (· nothing) ⊥ (· nothing) ⊥) ⊥ ⊥ () )))
+    (test-equal (do `(par (· nothing) ⊥ nothing 0))
+                `(( (par nothing 0 nothing 0) ⊥ ⊥ () )))
+    (test-equal (do `(par nothing 0 nothing 0))
+                `(( (par nothing nothing) ⊥ 0 () )))))
 
 (define-judgment-form esterel-eval
   #:mode     (→* I       I    I O       O O O)
@@ -418,7 +431,7 @@
    nothing
    pause
    (seq p-check p-check)
-   (par  p-check p-check))
+   (par p-check p-check))
   (phat-check
    (hat pause)
    (seq phat-check p-check)
@@ -457,47 +470,61 @@
  [(↓ 0) 0]
  [(↓ 2) 0]
  [(↓ 1) 1]
- [(↓ natural) ,(- k 1)]
+ [(↓ natural) ,(- `natural 1)]
  [(↓ (k ...)) ((↓ k) ...)])
 
 (define-metafunction esterel-eval
-  Can : pdotdot E -> ((S ...) (k ...) (v ...))
-  [(Can (· pbar) E) (can pbar E)]
-  [(Can (present S pdot q) E) (can pdot E)]
-  [(Can (present S p qdot) E) (can qdot E)]
-  [(Can (suspend pdot S) E) (can pdot E)]
-  [(Can (if v pdot q) E) (can pdot E)]
-  [(Can (if v p qdot) E) (can qdot E)]
+  Can : pdotdot E -> (((S sstat) ...) (k ...) (v ...))
+
+  [(Can (· pbar) E) (Can pbar E)]
+
+  [(Can (present S pdot q) E) (Can pdot E)]
+
+  [(Can (present S p qdot) E) (Can qdot E)]
+
+  [(Can (suspend pdot S) E) (Can pdot E)]
+
+  [(Can (if v pdot q) E) (Can pdot E)]
+
+  [(Can (if v p qdot) E) (Can qdot E)]
+
   [(Can (seq pdot q) E)
    (Can pdot E)
-   (where (∉ 0 (Can_K pdot)))]
+   (side-condition `(∉ 0 (Can_K pdot)))]
+
   [(Can (seq pdot q) E)
    ((Can_S pdot E)
     (U (without (Can_K pdot E) (0))
        (Can_K q E))
     (U (Can_V pdot E)
        (Can_V q E)))
-   (where (∈ 0 (Can_K pdot)))]
+   (side-condition `(∈ 0 (Can_K pdot)))]
+
   [(Can (seq p qdot) E)
    (Can qdot E)]
+
   [(Can (par pdot ⊥ qdot ⊥) E)
    ((U (Can_S pdot E)
        (Can_S qdot E))
-    (max (Can_K pdot E)
+    (meta-max (Can_K pdot E)
          (Can_K qdot E))
     (U (Can_V pdot E)
        (Can_V qdot E)))]
+
   ;; TODO should this be qbar? (page 112)
   [(Can (par pdot ⊥ q k) E)
    ((Can_S pdot E)
-    (max (Can_K pdot E) (k))
+    (meta-max (Can_K pdot E) (k))
     (Can_V pdot E))]
+
   [(Can (par p k qdot ⊥) E)
    ((Can_S qdot E)
-    (max (Can_K qdot E) (k))
+    (meta-max (Can_K qdot E) (k))
     (Can_V qdot E))]
+
   [(Can (par p k q l) E)
-   (() ((max k l)) ())]
+   (() ((meta-max k l)) ())]
+
   [(Can (loop go pdot) E)
    ((U (Can_S pdot E) (Can_S p E))
     (U (without (Can_K pdot E) (0))
@@ -505,95 +532,309 @@
     (U (Can_V pdot E)
        (Can_V p E)))
    (where p (remove-selected pdot))
-   (side-condition (∈ 0 (Can_K pdot E)))]
+   (side-condition `(∈ 0 (Can_K pdot E)))]
+
   [(Can (loop lstat pdot) E)
    (Can pdot E)]
+
   [(Can (signal sstat S pdot) E)
    (without (Can pdot (* E (S sstat))) S)]
+
   [(Can (trap t pdot) E)
    ((Can_S pdot E) (↓ (Can_K pdot E)) (Can_V pdot E))]
+
   [(Can (var v pdot) E)
    (Can pdot E)]
+
   [(Can (shared s pdot))
    (without_s (Can pdot E) s)]
+
   [(Can (:= v call) E)
    (() (0) ())]
+
   [(Can (<= s call) E)
    (() (0) (s))]
+
   [(Can (var v pbar) E) (Can pbar E)]
+
   [(Can (if v p q) E) (U (Can p E) (Can q E))]
+
   [(Can (if v phat q) E) (Can phat E)]
+
   [(Can (if v p qhat) E) (Can qhat E)]
+
   [(Can (shared s pbar) E) (without_s (Can pbar E) s)]
 
-  ;; from ch 3 (starts at 77
+  ;; from ch 3 (starts at 77)
   [(Can nothing E) (() (0) ())]
+
   [(Can pause E) (() (1) ())]
+
   [(Can (exit k) E) (() (k) ())]
+
   [(Can (emit S) E) (((S 1)) (0) ())]
+
   [(Can (present S p q) E)
    (Can p E)
-   (side-condition (∈ (S 1) E))]
+   (side-condition `(∈ (S 1) E))]
+
   [(Can (present S p q) E)
    (Can q E)
-   (side-condition (∈ (S 0) E))]
+   (side-condition `(∈ (S 0) E))]
+
   [(Can (present S p q) E)
    (U (Can p E) (Can q E))
-   (side-condition (∈ (S ⊥) E))])
+   (side-condition `(∈ (S ⊥) E))]
+
+  [(Can (suspend S p) E)
+   (Can p E)]
+
+  [(Can (seq p q) E)
+   (Can p E)
+   (side-condition `(∉ 0 (Can_K p E)))]
+
+  [(Can (seq p q) E)
+   ( (U (Can_S p E) (Can_S q E))
+     (U (without (Can_K p E) (0))
+        (Can_K q E))
+     (U (Can_V p E) (Can_V q E)) )]
+
+  [(Can (loop p) E)
+   (Can p E)]
+
+  [(Can (par p q) E)
+   ( (U (Can_S p E) (Can_S q E))
+     (meta-max (Can_K p E) (Can_K q E))
+     (U (Can_V p E) (Can_V q E)) )]
+
+  [(Can (trap T p) E)
+   ( (Can_S p E)
+     (↓ (Can_K p E))
+     (Can_V p E) )]
+
+  [(Can (signal S p) E)
+   (without (Can p (* E (S 0))) S)
+   (side-condition `(∉ (S 1) (Can_S p (* E (S ⊥)))))]
+
+  [(Can (signal S p) E)
+   (without (Can p (* E (S ⊥))) S)]
+
+  [(Can (hat pause) E)
+   ( () (0) () )]
+
+  [(Can (present S phat q) E)
+   (Can phat E)]
+
+  [(Can (present S p qhat) E)
+   (Can qhat E)]
+
+  [(Can (suspend S phat) E)
+   ( () (1) () )
+   (side-condition `(∈ (S 1) E))]
+
+  [(Can (suspend S phat) E)
+   (Can phat E)
+   (side-condition `(∈ (S 0) E))]
+
+  [(Can (suspend S phat) E)
+   ( (S_1 ...) (1 k ...) (v ...) )
+   (where ((S_1 ...) (k ...) (v ...)) E)
+   (side-condition `(∈ (S ⊥) E))]
+
+  [(Can (seq p qhat) E)
+   (Can qhat E)]
+
+  [(Can (seq phat q) E)
+   (Can phat E)
+   (side-condition `(∈ 0 (Can_K phat E)))]
+
+  [(Can (seq phat q) E)
+   ( (U (Can_S phat E) (Can_S q E))
+     (U (without (Can_K phat E) (0))
+        (Can_K q E))
+     (U (Can_V phat E) (Can_V q E)))]
+
+  [(Can (loop phat) E)
+   (Can phat E)
+   (side-condition `(∉ 0 (Can_K phat E)))]
+
+  [(Can (loop phat) E)
+   ( (U (Can_S phat E) (Can_S p E))
+     (U (without (Can_K phat E) (0)) (Can_K p E))
+     (U (Can_V phat E) (Can_V p E)) )
+   (where p (without-selected phat))]
+
+  [(Can (par phat q) E)
+   (Can phat E)]
+
+  [(Can (par p qhat) E)
+   (Can qhat E)]
+
+  [(Can (par phat qhat) E)
+   ( (U (Can_S phat E) (Can_S qhat E))
+     (meta-max (Can_K phat E) (Can_K qhat E))
+     (U (Can_V phat E) (Can_V qhat E)) )]
+
+  [(Can (trap T phat) E)
+   ( (Can_S phat E)
+     (↓ (Can_K phat E))
+     (Can_V phat E) )]
+
+  [(Can (signal S phat))
+   (without (Can phat (* E (S 0))) S)
+   (side-condition `(∉ (S 1) (Can_S phat (* E (S ⊥)))))]
+
+  [(Can (signal S phat))
+   (without (Can phat (* E (S ⊥))) S)])
 
 (define-metafunction esterel-eval
   U  : (any ...) (any ...) -> (any ...)
-  [(U (any_1 ...) (any_2 ...))
-   (any_1 ... any_2 ...)])
+  [(U E_1 E_2)
+   (U_E E_1 E_2)]
+  [(U () (any ...))
+   (any ...)]
+  [(U (any any_1 ...) (any_2 ...))
+   (U (any_1 ...) (insert any any_2 ...))])
+
 (define-metafunction esterel-eval
-  without : (k ...) or (S ...) or (s ...) or ((S ...) (k ...) (s ...))
+  ;; special case union for signal events
+  U_E : E E -> E
+  [(U_E () E) E]
+  [(U_E ((S sstat) (S_1 sstat_1) ...) E)
+   (U_E ((S_1 sstat_1) ...) (insert_E (S sstat) E))])
+
+(define-metafunction esterel-eval
+  insert_E : (S sstat) E -> E
+  ;; if it was bot you Can replace it
+  [(insert_E (S natural) ((S_1 sstat_1) ... (S ⊥) (S_2 sstat_2) ...))
+   ((S_1 sstat_1) ... (S natural) (S_2 sstat_2) ...)]
+  ;; if it is not present you Can add it
+  [(insert_E (S sstat) ((S_1 sstat_1) ...))
+   ((S sstat) (S_1 sstat_1) ...)
+   (side-condition (not (member `S `(S_1 ...))))]
+  ;; else idk what the behavior is
+  ;; i think this means causally unsound program
+  ;; so... error?
+  ;; should never happen with Can?
+  )
+
+(define-metafunction esterel-eval
+  insert : any (any ...) -> (any ...)
+  [(insert any (any_1 ... any any_2 ...))
+   (any_1 ... any any_2 ...)]
+  [(insert any (any_1 ...))
+   (any any_1 ...)])
+
+(define-metafunction esterel-eval
+  without :
+  ((S sstat) ...) or (k ...) or (s ...) or (((S sstat) ...) (k ...) (s ...))
+  S or (k ...) or s
   ->
-  (k ...) or (S ...) or (s ...) or ((S ...) (k ...) (s ...)))
+  (k ...) or ((S sstat) ...) or (s ...) or (((S sstat) ...) (k ...) (s ...))
+
+  [(without ((S_1 sstat_1) ... (S sstat) (S_2 sstat_2) ...) S)
+   ((S_1 sstat_1) ... (S_2 sstat_2) ...)]
+
+  [(without (s_1 ... s s_2 ...) s)
+   (s_1 ... s_2 ...)]
+
+  [(without (k ...) ()) (k ...)]
+
+  [(without (k_1 ...) (k k_2 ...))
+   (without (without (k_1 ...) k) (k_2 ...))]
+
+  [(without (k_1 ... k k_2 ...) k)
+   (k_1 ... k_2 ...)]
+
+  [(without (E (k ...) (s ...)) S)
+   ((without E S) (k ...) (s ...))]
+
+  [(without (E (k ...) (s_1 ...)) s)
+   (E (k ...) (without (s_1 ...) s))])
+
+(define-metafunction esterel-eval
+  without_s
+  : (E (k ...) (s ...)) or (s ...)
+  s
+  -> (E (k ...) (s ...)) or (s ...)
+  [(without_s (E (k ...) (s_1 ...)) s)
+   (without_s (s_1 ...) s)]
+  [(without_s (s_1 ... s s_2 ...) s)
+   (s_1 ... s_2 ...)]
+  [(without_s (s_1 ...) s)
+   (s_1 ...)])
+
 (define-metafunction esterel-eval
   ∉ : any (any ...) -> boolean
   [(∉ any_1 (any_2 ...))
    ,(not `(∈ any_1 (any_2 ...)))])
 (define-metafunction esterel-eval
-  ∈ : any (any ...) -> boolean
+  ∈
+  : any (any ...) -> boolean
+  ;; special case, page 67
+  [(∈ (S ⊥) ((S_1 sstat) ...))
+   (where #t (∉ S (S_1 ...)))]
   [(∈ any_1 (any_2 ... any_1 any_3 ...))
    ,#t]
   [(∈ any_1 (any_2 ...))
    ,#f])
 (define-metafunction esterel-eval
-  max : (k ...) or k (k ...) or k -> (k) or k
-  [(max (k_1 ...) (k_2 ...))
-   ,(apply max (append `(k_1 ...) `(k_2 ...)))]
-  [(max k_1 k_2)
+  meta-max
+  : (k ...) or k
+  (k ...) or k
+  ->
+  (k) or k
+
+  [(meta-max (k_1 ...) (k_2 ...))
+   (,(apply max (append `(k_1 ...) `(k_2 ...))))]
+  [(meta-max k_1 k_2)
    ,(max `k_1 `k_2)])
+
 (define-metafunction esterel-eval
   * : E (S sstat) -> E
-  )
+  [(* ((S_1 sstat_1) ...
+       (S _)
+       (S_2 sstat_2) ...)
+      (S sstat))
+   ((S_1 sstat_1) ...
+    (S sstat)
+    (S_2 sstat_2) ...)]
+  [(* ((S_E sstat_E) ...)
+      (S sstat))
+   ((S sstat) (S_E sstat_E) ...)])
 
 (define-metafunction esterel-eval
-  Can_S pdotdot E -> (S ...))
-(define-metafunction esterel-eval
-  Can_K pdotdot E ->  (k ...))
+  Can_S : pdotdot E -> ((S sstat) ...)
+  [(Can_S pdotdot E)
+   ((S sstat) ...)
+   (where (((S sstat) ...) _ _) (Can pdotdot E))])
 
 (define-metafunction esterel-eval
-  Can_V pbar E -> (s ...)
+  Can_K : pdotdot E -> (k ...)
+  [(Can_K pdotdot E)
+   (k ...)
+   (where (_ (k ...) _) (Can pdotdot E))])
+
+(define-metafunction esterel-eval
+  Can_V : pbar E -> (s ...)
   [(Can_V pause) ()]
   [(Can_V (hat pause)) ()]
   [(Can_V (emit S)) ()]
   [(Can_V (exit k)) ()]
   [(Can_V (signal S pbar) E)
    (Can_V pbar  (* E (S ⊥)))
-   (where (∈ (S 1) (Can_S pbar (* E (S ⊥)))))]
+   (side-condition `(∈ (S 1) (Can_S pbar (* E (S ⊥)))))]
   [(Can_V (signal S pbar) E)
    (Can_V pbar (* E (S 0)))]
   [(Can_V (present S p q))
    (Can_V p E)
-   (side-condition (∈ (S 1) E))]
+   (side-condition `(∈ (S 1) E))]
   [(Can_V (present S p q))
    (Can_V q E)
-   (side-condition (∈ (S 0) E))]
+   (side-condition `(∈ (S 0) E))]
   [(Can_V (present S p q))
    (U (Can_V p E) (Can_V q E))
-   (side-condition (∈ (S ⊥) E))]
+   (side-condition `(∈ (S ⊥) E))]
   [(Can_V (present S phat q) E)
    (Can_V phat E)]
   [(Can_V (present S p qhat) E)
@@ -602,7 +843,7 @@
    (Can_V p E)]
   [(Can_V (suspend S phat) E)
    ()
-   (side-condition (∈ (S 1) E))]
+   (side-condition `(∈ (S 1) E))]
   [(Can_V (suspend S phat) E)
    (Can_V phat E)]
   [(Can_V (trap T pbar) E)
@@ -616,9 +857,8 @@
   [(Can_V (par p qhat) E)
    (Can_V qhat E)]
   [(Can_V (seq pbar q) E)
-   (Can_V pbar E)
    (U (Can_V pbar E) (Can_V q E))
-   (side-condition (∈ 0 (Can_K pbar E)))]
+   (side-condition `(∈ 0 (Can_K pbar E)))]
   [(Can_V (seq pbar q) E)
    (Can_V pbar E)]
   [(Can_V (seq p qhat) E)
@@ -627,4 +867,4 @@
    (Can_V p E)]
   [(Can_V (loop phat) E)
    (U (Can_V phat E) (Can_V (remove-selected phat) E))
-   (side-condition (∈ 0 (Can_K phat E)))])
+   (side-condition `(∈ 0 (Can_K phat E)))])
