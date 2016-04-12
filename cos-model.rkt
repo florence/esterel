@@ -384,7 +384,7 @@
   (test-case "26"
     (test-equal
      (do `(trap t2 (· (exit 3))))
-     `(( `(trap t2 (exit 3)) ⊥ 2 ()))))
+     `(( (trap t2 (exit 3)) ⊥ 2 () ))))
   (test-case "27"
     (test-equal
      (do `(· (exit 3)))
@@ -466,7 +466,9 @@
    (signal S (remove-selected phat))])
 
 (define-metafunction esterel-eval
+  #|
   ↓ : k or (k ...) -> k or (k ...)
+  |#
  [(↓ 0) 0]
  [(↓ 2) 0]
  [(↓ 1) 1]
@@ -726,11 +728,13 @@
    (any any_1 ...)])
 
 (define-metafunction esterel-eval
+  #|
   without :
   ((S sstat) ...) or (k ...) or (s ...) or (((S sstat) ...) (k ...) (s ...))
   S or (k ...) or s
   ->
   (k ...) or ((S sstat) ...) or (s ...) or (((S sstat) ...) (k ...) (s ...))
+  |#
 
   [(without ((S_1 sstat_1) ... (S sstat) (S_2 sstat_2) ...) S)
    ((S_1 sstat_1) ... (S_2 sstat_2) ...)]
@@ -753,10 +757,12 @@
    (E (k ...) (without (s_1 ...) s))])
 
 (define-metafunction esterel-eval
+  #|
   without_s
   : (E (k ...) (s ...)) or (s ...)
   s
   -> (E (k ...) (s ...)) or (s ...)
+  |#
   [(without_s (E (k ...) (s_1 ...)) s)
    (without_s (s_1 ...) s)]
   [(without_s (s_1 ... s s_2 ...) s)
@@ -779,11 +785,13 @@
   [(∈ any_1 (any_2 ...))
    ,#f])
 (define-metafunction esterel-eval
+  #|
   meta-max
   : (k ...) or k
   (k ...) or k
   ->
   (k) or k
+  |#
 
   [(meta-max (k_1 ...) (k_2 ...))
    (,(apply max (append `(k_1 ...) `(k_2 ...))))]
