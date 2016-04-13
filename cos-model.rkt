@@ -13,7 +13,8 @@
    (suspend p S)
    (present S p q)
    (trap T p)
-   (exit k)
+   (exit T k)
+   (emit S)
    (var v p)
    (shared s p)
    (signal S p)
@@ -65,7 +66,16 @@
   (lstat none stop go)
   (pstat ⊥ l k)
   ((l k m) natural)
-  (sstat ⊥ 1 0))
+  (sstat ⊥ 1 0)
+
+   #:binding-forms
+   (signal S p #:refers-to S)
+   (signal S phat #:refers-to S)
+   (signal S sstat pdot #:refers-to S)
+   (trap T p #:refers-to T)
+   (trap T phat #:refers-to T)
+   (trap T pdot #:refers-to T)
+   )
 
 (define-extended-language esterel-eval esterel
   ;(m P E Ss k data)
@@ -225,11 +235,39 @@
 
    [------------
    "27"
-   (→ (· (exit k)) E data
-      (exit k) ⊥ k data)]
+   (→ (· (exit T k)) E data
+      (exit T k) ⊥ k data)]
+
+   [------------
+   "28"
+   (→ (· (signal S p)) E data
+      (signal S ⊥ (· p)) ⊥ ⊥ data)]
+
+   [(→ pdot data (* E (S m))
+            ;;TODO should this really be the same data?
+       pdot_* S ⊥ data)
+    (side-condition (∈ m (⊥ 1)))
+    ------------
+   "29"
+   (→  (signal S m pdot) data E
+       (signal S 1 pdot_*) ⊥ ⊥ data)]
+
+   ;; TODO (page 105) confusing S should be decorated with 1, 0, or ⊥
+   ;; assuming to mean (S 1) is not Can_S?
+   [(side-condition (∉ (S 1) (Can_S pdot (* E (S ⊥)))))
+    ------------
+   "30"
+   (→ (signal S ⊥ pdot) E data
+      (signal S 0 pdot) ⊥ ⊥ data)]
+
+   [------------
+   "34"
+   (→ (· (emit S)) E data
+      (emit S) S 0 data)]
    )
 
 (module+ test
+  (default-language esterel-eval)
   (define (do t [E `()] [data `()])
     (judgment-holds (→ ,t ,E ,data pdotdot e k data_*)
                     (pdotdot e k data_*)))
@@ -371,8 +409,8 @@
      `(( (trap t (seq  nothing (· pause))) ⊥ ⊥ ()))))
   (test-case "23"
     (test-equal
-     (do `(trap t (seq (· (exit 2)) pause)))
-     `(( (trap t (seq (exit 2) pause)) ⊥ 0 ()))))
+     (do `(trap t (seq (· (exit T 2)) pause)))
+     `(( (trap t (seq (exit T 2) pause)) ⊥ 0 ()))))
   (test-case "24"
     (test-equal
      (do `(trap t (seq pause (· (hat pause)))))
@@ -383,12 +421,36 @@
      `(( (trap t (seq pause (hat pause))) ⊥ 1 ()))))
   (test-case "26"
     (test-equal
-     (do `(trap t2 (· (exit 3))))
-     `(( (trap t2 (exit 3)) ⊥ 2 () ))))
+     (do `(trap t2 (· (exit T 3))))
+     `(( (trap t2 (exit T 3)) ⊥ 2 () ))))
   (test-case "27"
     (test-equal
-     (do `(· (exit 3)))
-     `(( (exit 3) ⊥ 3 ()))))
+     (do `(· (exit T 3)))
+     `(( (exit T 3) ⊥ 3 ()))))
+  (test-case "28"
+    (test-equal
+     (do `(· (signal S (emit S))))
+     `(( (signal S ⊥ (· (emit S))) ⊥ ⊥ ()))))
+  (test-case "29"
+    (test-true "29-pdotdot"
+     (redex-match? esterel-eval pdotdot `(seq (· (emit S«156»)) pause)))
+    (test-true "29-E"
+               (redex-match? esterel-eval E `((S«156» ⊥))))
+    (test-equal
+     (do `(signal S ⊥ (seq (· (emit S)) pause)))
+     `(( (signal S 1 (seq (emit S) (· pause))) S ⊥ ()))))
+  (test-case "30"
+    (test-equal
+     `(Can_S (signal S 0 (seq (emit S) (seq pause (· pause)))) ((S ⊥)))
+     `())
+    (test-equal
+     (do `(signal S 0 (seq (emit S) (seq pause (· pause)))))
+     `(( (signal S 0 (seq (emit S) (seq pause (· pause)))) ⊥ ⊥ ()))))
+
+  (test-case "34"
+    (test-equal
+     (do `(· (emit S)))
+     `(( (emit S) S 0 ()))))
 
 
 
@@ -426,7 +488,7 @@
    -------
    (c->> pbar pbar_* k)])
 
-(define-extended-language check-par esterel-eval
+(define-extended-language esterel-check esterel-eval
   (p-check
    nothing
    pause
@@ -435,13 +497,18 @@
   (phat-check
    (hat pause)
    (seq phat-check p-check)
+   (seq p-check phat-check)
    (par phat-check phat-check)))
 
 (module+ test
   ;(current-traced-metafunctions 'all)
   (redex-check
-   check-par p-check
+   esterel-check p-check
    (judgment-holds (c->> p-check pbar k))
+   #:attempts 50)
+  (redex-check
+   esterel-check phat-check
+   (judgment-holds (c->> phat-check pbar k))
    #:attempts 50))
 
 (define-metafunction esterel-eval
@@ -691,6 +758,8 @@
 
 (define-metafunction esterel-eval
   U  : (any ...) (any ...) -> (any ...)
+  ;; I suspect this case is wrong...?
+  #;
   [(U E_1 E_2)
    (U_E E_1 E_2)]
   [(U () (any ...))
