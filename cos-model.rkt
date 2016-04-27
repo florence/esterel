@@ -407,12 +407,35 @@
    "34"
    (→ (· (emit S)) data E
       (emit S) S zero data)]
+
+   [(where #t (∈ (S (Succ zero)) E))
+    ------------
+    "35"
+    (→ (· (suspend phat S)) data E
+       (suspend phat S) ⊥ (Succ zero) data)]
+
+   [(where #t (∈ (S zero) E))
+    ------------
+    "36"
+    (→ (· (suspend phat S)) data E
+       (suspend (· phat) S) ⊥ ⊥ data)]
+
+   [------------
+    "37"
+    (→ (· (suspend p S)) data E
+       (suspend (· p) S) ⊥ ⊥ data)]
+
+   [(→ pdot data E pdotdot e k data_*)
+    ------------
+    "38"
+    (→ (suspend pdot S) data E
+       (suspend pdotdot S) e k data_*)]
    )
 
 (module+ test
   (default-language esterel-eval)
   (define (do t [E `()] [data `()])
-    (judgment-holds (→ ,t ,E ,data pdotdot e k data_*)
+    (judgment-holds (→ ,t ,data ,E pdotdot e k data_*)
                     (pdotdot e k data_*)))
   (test-case "1"
     (test-equal (do `(· nothing))
@@ -650,6 +673,28 @@
      (do `(· (emit S)))
      `(( (emit S) S zero ()))))
 
+  (test-case "35"
+    (test-equal
+     (do `(· (suspend (hat pause) S))
+         `((S (Succ zero))))
+     `(( (suspend (hat pause) S) ⊥ (Succ zero) () ))))
+
+  (test-case "36"
+    (test-equal
+     (do `(· (suspend (hat pause) S))
+         `((S zero)))
+     `(( (suspend (· (hat pause)) S) ⊥ ⊥ () ))))
+
+  (test-case "37"
+    (test-equal
+     (do `(· (suspend pause S)))
+     `(( (suspend (· pause) S) ⊥ ⊥ () ))))
+
+  (test-case "38"
+    (test-equal
+     (do `(suspend (· pause) S))
+     `(( (suspend (hat pause) S) ⊥ one () ))))
+
 
 
 
@@ -706,12 +751,12 @@
 
 (define-judgment-form esterel-eval
   ;; constructive ->>
-  #:mode     (c->> I    O    O       O)
-  #:contract (c->> pbar qbar (S ...) k)
-  [(→* (· pbar) () () pbar_* (S ...) k data_*)
+  #:mode     (c->> I    I O    O       O)
+  #:contract (c->> pbar E qbar (S ...) k)
+  [(→* (· pbar) () E pbar_* (S ...) k data_*)
    (side-condition ,(not (equal? `k `⊥)))
    -------
-   (c->> pbar pbar_* (S ...) k)])
+   (c->> pbar E pbar_* (S ...) k)])
 
 (define-metafunction esterel
   free-emitted-signals : pbar  -> (S ...)
@@ -724,7 +769,7 @@
    (U (free-emitted-signals pbar) (free-emitted-signals qbar))]
   [(free-emitted-signals (loop pbar)) (free-emitted-signals pbar)]
   [(free-emitted-signals (suspend pbar S)) (free-emitted-signals pbar)]
-  [(free-emitted-signals (present Spbar qbar))
+  [(free-emitted-signals (present S pbar qbar))
    (U (free-emitted-signals pbar) (free-emitted-signals qbar))]
   [(free-emitted-signals (trap T pbar)) (free-emitted-signals pbar)]
   [(free-emitted-signals (exit _ _)) ()]
@@ -734,6 +779,30 @@
   [(free-emitted-signals (signal S pbar)) (without_s (free-emitted-signals pbar) S)]
   [(free-emitted-signals (:= v call)) ()]
   [(free-emitted-signals (<= s call)) ()])
+
+(define-metafunction esterel
+  free-signal-vars : pbar -> (S ...)
+  [(free-signal-vars nothing) ()]
+  [(free-signal-vars pause) ()]
+  [(free-signal-vars (hat pause)) ()]
+  [(free-signal-vars (seq pbar qbar))
+   (U (free-signal-vars pbar) (free-signal-vars qbar))]
+  [(free-signal-vars (par pbar qbar))
+   (U (free-signal-vars pbar) (free-signal-vars qbar))]
+  [(free-signal-vars (loop pbar)) (free-signal-vars pbar)]
+  [(free-signal-vars (suspend pbar S)) (U (S) (free-signal-vars pbar))]
+  [(free-signal-vars (present S pbar qbar))
+   (U (S)
+      (U (free-signal-vars pbar) (free-signal-vars qbar)))]
+  [(free-signal-vars (trap T pbar)) (free-signal-vars pbar)]
+  [(free-signal-vars (exit _ _)) ()]
+  [(free-signal-vars (emit S)) (S)]
+  [(free-signal-vars (var v pbar)) (free-signal-vars pbar)]
+  [(free-signal-vars (shared s pbar)) (free-signal-vars pbar)]
+  [(free-signal-vars (signal S pbar)) (without_s (free-signal-vars pbar) S)]
+  [(free-signal-vars (:= v call)) ()]
+  [(free-signal-vars (<= s call)) ()])
+
 
 (module+ test
   (define-extended-language esterel-check esterel-eval
@@ -746,12 +815,14 @@
      (trap T p-check)
      (exit T nat)
      (signal S p-check)
+     (suspend p-check S)
      (emit S))
 
     (phat-check
      (hat pause)
      ;; loops only present here to force loops to be non-instantanious
      (loop phat-check)
+     (suspend phat-check S)
      (seq phat-check p-check)
      (seq p-check phat-check)
      (par phat-check phat-check)
@@ -764,29 +835,30 @@
 
   (define-judgment-form esterel-eval
   ;; constructive ->>, with testing checks
-  #:mode     (cc->> I    O    O       O)
-  #:contract (cc->> pbar qbar (S ...) k)
-  [(c->> pbar qbar (S ...) k)
+  #:mode     (cc->> I    I O    O       O)
+  #:contract (cc->> pbar E qbar (S ...) k)
+  [(c->> pbar E qbar (S ...) k)
    ;(side-condition ,(displayln `(free-signals pbar)))
    ;(side-condition ,(displayln `((∈ S (free-signals pbar)) ...)))
    (where (#t ...) ((∈ S (free-emitted-signals pbar)) ...))
-   (where E (Can_S pbar ()))
+   (where E_2 (Can_S pbar ()))
    ;(side-condition ,(displayln `((∈ (S one) E) ...)))
-   (where (#t ...) ((∈ (S (Succ zero)) E) ...))
+   (where (#t ...) ((∈ (S (Succ zero)) E_2) ...))
    -------
-   (cc->> pbar qbar (S ...) k)])
+   (cc->> pbar E qbar (S ...) k)])
 
   #;
   (define-metafunction esterel-eval
     possibles : E -> (S ...)
     [])
 
+  #;
   (define-metafunction esterel-eval
-    eval : pbar -> (qbar (S ...) k)
-    [(eval pbar)
+    eval : pbar E -> (qbar (S ...) k)
+    [(eval pbar E)
      (qbar (S ...) k)
      (where (qbar (S ...) k)
-            ,(judgment-holds (c->> (seq nothing (emit E)) any_1 any_2 any_3)
+            ,(judgment-holds (c->> pbar E any_1 any_2 any_3)
                              (any_1 any_2 any_3)))])
 
 
@@ -838,36 +910,70 @@
     [(traps-okay pbar NL)
      ---------
      (traps-okay (signal S pbar) NL)]
+
+    [(traps-okay pbar NL)
+     ---------
+     (traps-okay (suspend pbar S) NL)]
     )
+
+  (define-metafunction esterel-eval
+    random-E : (S ...) -> E
+    [(random-E (S ...))
+     ((random-E_S S) ...)])
+
+  (define-metafunction esterel-eval
+    random-E_S : S -> (S k)
+    [(random-E_S S)
+     (S ,(if (> (random) 0.5) `zero `(Succ zero)))])
+
 
   (test-case "eval bugs"
     (test-judgment-holds
      (c->>
+      (seq (suspend (loop (seq (hat pause) (emit QY))) t) (signal f (trap C nothing)))
+      ((t zero))
+      (seq (suspend (loop (seq (hat pause) (emit S_QY))) S_t) (signal f (trap C nothing)))
+      (S_QY)
+      (Succ zero)))
+    (test-judgment-holds
+     (c->>
+      (seq (suspend (hat pause) N) (signal k (emit Z)))
+      ((N zero))
+      (seq (suspend pause S_N) (signal S_k (emit S_Z)))
+      (S_Z)
+      zero))
+    (test-judgment-holds
+     (c->>
       (seq (trap Q (hat pause)) (signal n (emit h)))
+      ()
       (seq (trap T_Q pause) (signal S_n (emit S_h)))
       (S_h)
       zero))
     (test-judgment-holds
      (cc->>
       (seq (trap Q (hat pause)) (signal n (emit h)))
+      ()
       (seq (trap T_Q pause) (signal S_n (emit S_h)))
       (S_h)
       zero))
     (test-judgment-holds
      (cc->>
       (seq (loop (hat pause)) (trap b nothing))
+      ()
       (seq (loop (hat pause)) (trap T_b nothing))
       ()
       one))
     (test-judgment-holds
      (cc->>
       (signal A (signal Gz (emit H)))
+      ()
       (signal S_A (signal S_Gz (emit S_H)))
       (S_H)
       zero))
     (test-judgment-holds
      (cc->>
       (trap x (trap OKG (exit P (Succ two))))
+      ()
       (trap T_x (trap T_OKG (exit T_P (Succ two))))
       ()
       zero))
@@ -875,33 +981,39 @@
     (test-judgment-holds
      (cc->>
       (seq (trap x (trap OKG (exit P (Succ two)))) (signal A (signal Gz (emit H))))
+      ()
       (seq (trap T_x (trap T_OKG (exit T_P (Succ two)))) (signal S_A (signal S_Gz (emit S_H))))
       (S_H)
       zero))
 
     (test-judgment-holds (cc->>
                           (loop (hat pause))
+                          ()
                           (loop (hat pause))
                           ()
                           one))
     (test-judgment-holds (cc->>
                           (seq (emit z) (loop pause))
+                          ()
                           (seq (emit S_z) (loop (hat pause)))
                           (z)
                           one))
     (test-judgment-holds (cc->>
                           (seq (emit z) (loop (hat pause)))
+                          ()
                           (seq (emit S_z) (loop (hat pause)))
                           ()
                           one))
     (test-judgment-holds (cc->>
                           (trap L (trap TGq (exit e (Succ two))))
+                          ()
                           any_1
                           any_2
                           any_3))
     (test-judgment-holds
      (cc->>
       (seq (trap L (trap TGq (exit e (Succ two)))) (signal IH nothing))
+      ()
       (seq (trap T_L (trap T_TGq (exit T_e (Succ two)))) (signal S_IH nothing))
       ()
       zero))
@@ -909,6 +1021,7 @@
     (test-judgment-holds
      (cc->>
       (par (seq (emit Q) (emit Q)) (signal S_v pause))
+      ()
       (par (seq (emit S_Q) (emit S_Q)) (signal S_v (hat pause)))
       (Q)
       one)))
@@ -929,6 +1042,7 @@
        (par (signal TY (signal a nothing))
             (signal S (par (par (emit R) pause)
                            pause)))
+       ()
        (par (signal S_TY (signal S_a nothing))
             (signal S_S (par (par (emit S_R) (hat pause))
                              (hat pause))))
@@ -938,6 +1052,7 @@
      (test-judgment-holds
       (cc->>
        (par (signal K (signal Z (par nothing pause))) (signal R nothing))
+       ()
        (par (signal S_K (signal S_Z (par nothing (hat pause)))) (signal S_R nothing))
        ()
        one)))))
@@ -951,7 +1066,7 @@
      #:satisfying (okay p-check)
      (begin
        ;(displayln `p-check)
-       (judgment-holds (cc->> p-check pbar (S ...) k)))
+       (judgment-holds (cc->> p-check (random-E (free-signal-vars p-check)) pbar (S ...) k)))
      #:attempts 333
      )
     (redex-check
@@ -959,7 +1074,7 @@
      #:satisfying (okay phat-check)
      (begin
        ;(displayln `phat-check)
-       (judgment-holds (cc->> phat-check pbar (S ...) k)))
+       (judgment-holds (cc->> phat-check (random-E (free-signal-vars phat-check)) pbar (S ...) k)))
      #:attempts 333
      )
     (redex-check
@@ -967,7 +1082,7 @@
      #:satisfying (okay pbar-check)
      (begin
        ;(displayln `pbar-check)
-       (judgment-holds (cc->> pbar-check pbar (S ...) k)))
+       (judgment-holds (cc->> pbar-check (random-E (free-signal-vars pbar-check)) pbar (S ...) k)))
      #:attempts 333
      )))
 
@@ -1005,8 +1120,16 @@
  [(↓ (k ...)) ((↓ k) ...)])
 
 (module+ test
-  (test-case "Can"
+  (test-case "Can bugs"
     ;(current-traced-metafunctions '(Can Can_V))
+    (test-equal
+     `(Can (suspend (loop (seq (hat pause) (emit QY))) tt) ())
+     `( ((QY (Succ zero)))
+        ((Succ zero))
+        () ))
+    (test-equal
+     `(Can (suspend (hat pause) xJux) ())
+     `( () ((Succ zero) zero) () ))
     (test-equal
      `(Can_S (seq (· (emit S)) pause) ((S ⊥)))
      `((S one)))
@@ -1106,7 +1229,6 @@
    (() (zero) (s))]
 
   [(Can (var v pbar) E) (Can pbar E)]
-
   [(Can (if v p q) E) (U (Can p E) (Can q E))]
 
   [(Can (if v phat q) E) (Can phat E)]
@@ -1136,7 +1258,7 @@
    (U (Can p E) (Can q E))
    (side-condition `(∈ (S ⊥) E))]
 
-  [(Can (suspend S p) E)
+  [(Can (suspend p S) E)
    (Can p E)]
 
   [(Can (seq p q) E)
@@ -1178,17 +1300,17 @@
   [(Can (present S p qhat) E)
    (Can qhat E)]
 
-  [(Can (suspend S phat) E)
+  [(Can (suspend phat S) E)
    ( () (one) () )
    (side-condition `(∈ (S one) E))]
 
-  [(Can (suspend S phat) E)
+  [(Can (suspend phat S) E)
    (Can phat E)
    (side-condition `(∈ (S zero) E))]
 
-  [(Can (suspend S phat) E)
-   ( (S_1 ...) (one k ...) (v ...) )
-   (where ((S_1 ...) (k ...) (v ...)) E)
+  [(Can (suspend phat S) E)
+   ( E_o (U ((Succ zero)) (k ...)) (v ...) )
+   (where (E_o (k ...) (v ...)) (Can phat E))
    (side-condition `(∈ (S ⊥) E))]
 
   [(Can (seq p qhat) E)
@@ -1338,6 +1460,7 @@
   : any (any ...) -> boolean
   ;; special case, page 67
   [(∈ (S ⊥) ((S_1 sstat) ...))
+   #t
    (where #t (∉ S (S_1 ...)))]
   [(∈ any_1 (any_2 ... any_1 any_3 ...))
    #t]
