@@ -1,5 +1,5 @@
 #lang racket
-(require redex)
+(require redex racket/random)
 (module+ test
   (provide (all-defined-out))
   (require rackunit (prefix-in rackunit: rackunit))
@@ -89,7 +89,8 @@
    (shared s := call p)
    (signal S p)
    (:= v call)
-   (<= s call))
+   (<= s call)
+   (if v p q))
 
   ((phat qhat)
    (hat pause)
@@ -105,7 +106,9 @@
    (trap phat)
    (var v := call phat)
    (shared s := call phat)
-   (signal S phat))
+   (signal S phat)
+   (if v phat q)
+   (if v p qhat))
 
   ((pbar qbar) p phat)
 
@@ -124,10 +127,12 @@
    (trap pdot)
    (var v := call pdot)
    (shared s := call pdot)
-   (signal S sstat pdot))
+   (signal S sstat pdot)
+   (if v pdot q)
+   (if v p qdot))
 
   ;; for now the only value is numbers
-  (call datum (+ call ...) v s)
+  (call datum (+ call call) (+ call) (+) v s)
   (datum natural)
 
   ((pdotdot qdotdot) pdot pbar)
@@ -142,9 +147,6 @@
    (signal S p #:refers-to S)
    (signal S phat #:refers-to S)
    (signal S sstat pdot #:refers-to S)
-
-   (var v := call p #:refers-to v)
-   (shared s := call p #:refers-to s)
    )
 (module+ test
   (test-case "grammar"
@@ -173,13 +175,7 @@
   (M (machine pdotdot data))
 
   #:binding-forms
-  (machine pdotdot #:refers-to data data)
-  (data-elem ...)
-  #:exports (shadow data-elem ...)
-  (dvar v datum)
-  #:exports v
-  (dshared s datum shared-stat)
-  #:exports s)
+  (machine pdotdot data))
 (module+ test
   (test-case "eval grammar"
     (check-true
@@ -508,7 +504,101 @@
     "48"
     (→ (machine (shared s := call_init pdot) data) E
        (machine (shared s := call_init pdotdot) data_*) e k)]
-   )
+
+   [(where old (data-ref data (s status)))
+
+    (where (s_shared ...) (shared-of call data))
+    (where (ready ...) ((data-ref data (s_shared status)) ...))
+
+    (where data_* (data<- data (s status) new))
+    (where data_** (data<- data_* (s value) (eval-call call data)))
+    ------------
+    "49"
+    (→ (machine (· (<= s call)) data) E
+       (machine (<= s call) data_**) ⊥ zero)]
+
+   [(where new (data-ref data (s status)))
+
+    (where (s_shared ...) (shared-of call data))
+    (where (ready ...) ((data-ref data (s_shared status)) ...))
+
+
+    ;; TODO allow for other comb functions
+    (where datum_this (eval-call call data))
+    (where datum_new (eval-call (+ (data-ref data (s value)) datum_this) data))
+    (where data_* (data<- data (s value) datum_new))
+    ------------
+    "50"
+    (→ (machine (· (<= s call)) data) E
+       (machine (<= s call) data_*) ⊥ zero)]
+
+   [(where (s_shared ...) (shared-of call data))
+    (where (ready ...) ((data-ref data (s_shared status)) ...))
+
+    (where data_* (data<- data v (eval-call call data)))
+    ----------
+    "51"
+    (→ (machine (· (var v := call p)) data) E
+       (machine (var v := call (· p)) data_*) ⊥ ⊥)]
+
+   [----------
+    "52"
+    (→ (machine (· (var v := call phat)) data) E
+       (machine (var v := call (· phat)) data) ⊥ ⊥)]
+
+   [(→ (machine pdot data) E
+       (machine pdotdot data_*) e k)
+    ----------
+    "53"
+    (→ (machine (var v := call pdot) data) E
+       (machine (var v := call pdotdot) data_*) e k)]
+
+   [(where 1 (data-ref data v))
+    ----------
+    "54"
+    (→ (machine (· (if v p q)) data) E
+       (machine (if v (· p) q) data) ⊥ ⊥)]
+
+   [(where 0 (data-ref data v))
+    ----------
+    "55"
+    (→ (machine (· (if v p q)) data) E
+       (machine (if v p (· q)) data) ⊥ ⊥)]
+
+   [----------
+    "56"
+    (→ (machine (· (if v phat q)) data) E
+       (machine (if v (· phat) q) data) ⊥ ⊥)]
+
+   [----------
+    "57"
+    (→ (machine (· (if v p qhat)) data) E
+       (machine (if v p (· qhat)) data) ⊥ ⊥)]
+
+   [(→ (machine pdot data) E
+       (machine pdotdot data_*) e k)
+    ----------
+    "58"
+    (→ (machine (if v pdot q) data) E
+       (machine (if v pdotdot q) data_*) e k)]
+
+   [(→ (machine qdot data) E
+       (machine qdotdot data_*) e k)
+    ----------
+    "59"
+    (→ (machine (if v p qdot) data) E
+       (machine (if v p qdotdot) data_*) e k)]
+
+   [(where (s_shared ...) (shared-of call data))
+    (where (ready ...) ((data-ref data (s_shared status)) ...))
+
+    (where datum (eval-call call data))
+    (where data_* (data<- data v datum))
+    ------------
+    "60"
+    (→ (machine (· (:= v call)) data) E
+       (machine (:= v call) data_*) ⊥ zero)])
+
 
 (define-metafunction esterel-eval
   meta-or : (boolean ...) -> boolean
@@ -525,20 +615,25 @@
    (where (any_1 ... (dshared s datum shared-stat) any_2 ...)
           data)]
   [(shared-of v data) ()]
-  [(shared-of (+ call ...) data)
-   (U (shared-of call data) ...)])
+  [(shared-of (+) data) ()]
+  [(shared-of (+ call) data)
+   (shared-of call data)]
+  [(shared-of (+ call_1 call_2) data)
+   (U (shared-of call_1 data) (shared-of call_2 data))])
 
-(define-metafunction esterel-eval
-  ;data-ref : data v or s-> data-elem
-  ;data-ref : data (s status) -> data-elem
-  ;data-ref : data (s value) -> data-elem
+(define-extended-language ref-lang esterel-eval
+  (input ::= v s (s status) (s value))
+  (output ::= datum shared-stat))
+(define-metafunction ref-lang
+  data-ref : data input -> output
   [(data-ref (any_1 .... (dvar v datum) any_2 ...) v) datum]
   [(data-ref (any_1 .... (dshared s datum shared-stat) any_2 ...)
-             (v status))
+             (s status))
    shared-stat]
   [(data-ref (any_1 .... (dshared s datum shared-stat) any_2 ...)
-             (v value))
+             (s value))
    datum])
+
 
 (define-metafunction esterel-eval
   eval-call : call data -> datum
@@ -549,7 +644,7 @@
   [(eval-call datum data) datum]
   [(eval-call (+ call ...) data)
    ,(apply + `(datum ...))
-   (where (datum ...) ((eval-call call ...)))])
+   (where (datum ...) ((eval-call call data) ...))])
 
 (define-metafunction esterel-eval
   ;data<- : data v datum -> data
@@ -557,18 +652,17 @@
   ;data<- : data (s value) datum -> data
   ;data<- : data (s status) shared-stat -> data
   [(data<- (any_1 ... (dvar v any) any_2 ...) v datum)
-   (any_1 ... (v datum) any_2 ...)]
+   (any_1 ... (dvar v datum) any_2 ...)]
   [(data<- (any ...) v datum)
-   ((v datum) any ...)]
-  [(data<- (any_1 ... (dshared v datum shared-stat) any_2 ...) s datum shared-stat)
-   ;; "error"
-   #f]
+   ((dvar v datum) any ...)]
+  [(data<- (any_1 ... (dshared s any_3 any_4) any_2 ...) s datum shared-stat)
+   (any_1 ... (dshared s datum shared-stat) any_2 ...)]
   [(data<- (any ...) s datum shared-stat)
    ((dshared s datum shared-stat) any ...)]
-  [(data<- (any_1 ... (dshared v any shared-stat) any_2 ...) (s value) datum)
-   (any_1 ... (dshared v datum shared-stat) any_2 ...)]
-  [(data<- (any_1 ... (dshared v datum any) any_2 ...) (s status) shared-stat)
-   (any_1 ... (dshared v datum shared-stat) any_2 ...)])
+  [(data<- (any_1 ... (dshared s any shared-stat) any_2 ...) (s value) datum)
+   (any_1 ... (dshared s datum shared-stat) any_2 ...)]
+  [(data<- (any_1 ... (dshared s datum any) any_2 ...) (s status) shared-stat)
+   (any_1 ... (dshared s datum shared-stat) any_2 ...)])
 
 (module+ test
   (default-language esterel-eval)
@@ -577,8 +671,9 @@
                        (machine pdotdot data_*) e k)
                     (pdotdot e k data_*)))
   (test-case "1"
-    (test-equal (do `(· nothing))
-                `((nothing ⊥ zero ()))))
+    (parameterize ([current-traced-metafunctions '(→)])
+      (test-equal (do `(· nothing))
+                  `((nothing ⊥ zero ())))))
   (test-case "2"
     (test-equal (do `(· pause))
                 `(((hat pause) ⊥ one ()))))
@@ -866,14 +961,11 @@
                     (M e k)))
   (test-case "45"
     (test-equal
-     `(machine
-       (shared s«353» := 5 (· nothing))
-       ((dshared s«353» 5 ready)))
-     `(machine
-       (shared s := 5 (· nothing))
-       ((dshared s 5 ready))))
-    (test-equal
      (do* (· (shared s := 5 nothing)) ())
+     `(( (machine (shared s := 5 (· nothing)) ((dshared s 5 old)))
+         ⊥ ⊥ )))
+    (test-equal
+     (do* (· (shared s := 5 nothing)) ((dshared s 5 old)))
      `(( (machine (shared s := 5 (· nothing)) ((dshared s 5 old)))
          ⊥ ⊥ ))))
   (test-case "46"
@@ -892,8 +984,147 @@
      (do* (shared s := 1 (· nothing)) ((dshared s 0 ready)))
      `(( (machine (shared s := 1 nothing) ((dshared s 0 ready)))
          ⊥ zero ))))
-  (test-case "49")
-  (test-case "50")
+  (test-case "49"
+    (test-equal
+     (do* (shared s := 1
+                  (· (<= s (+ 1 y))))
+          ((dshared s 1 old)
+           (dshared y 1 ready)))
+     `((
+        (machine
+         (shared s := 1 (<= s (+ 1 y)))
+         ((dshared s 2 new)
+          (dshared y 1 ready)))
+        ⊥
+        zero
+        ))))
+  (test-case "50"
+    (test-equal
+     (do* (shared s := 1
+                  (· (<= s (+ 1 y))))
+          ((dshared s 1 new )
+           (dshared y 1 ready)))
+     `((
+        (machine
+         (shared s := 1 (<= s (+ 1 y)))
+         ((dshared s 3 new)
+          (dshared y 1 ready)))
+        ⊥
+        zero
+        ))))
+
+  (test-case "51"
+    (test-equal `(shared-of (+ 2 1) ()) `())
+    (check-true
+     (redex-match? esterel-eval (· (var v := call p)) `(· (var v := (+ 2 1) nothing))))
+    (test-equal
+     (do*
+      (· (var v := (+ 2 1) nothing))
+      ())
+     `((
+        (machine (var v := (+ 2 1) (· nothing))
+                 ((dvar v 3)))
+        ⊥ ⊥
+        ))))
+
+  (test-case "52"
+    (test-equal
+     (do*
+      (· (var v := 3 (hat pause)))
+      ((dvar v 2)))
+     `((
+        (machine (var v := 3 (· (hat pause)))
+                 ((dvar v 2)))
+        ⊥
+        ⊥
+        ))))
+  (test-case "53"
+    (test-equal
+     (do*
+      (var v := 3 (· (hat pause)))
+      ((dvar v 2)))
+     `((
+        (machine (var v := 3 pause)
+                 ((dvar v 2)))
+        ⊥
+        zero)))
+    (test-equal
+     (do*
+      (var v := 3 (· (:= v 4)))
+      ((dvar v 2)))
+     `((
+        (machine (var v := 3 (:= v 4))
+                 ((dvar v 4)))
+        ⊥
+        zero))))
+  (test-case "54"
+    (test-equal
+     (do*
+      (· (if v nothing pause))
+      ((dvar v 1)))
+     `((
+        (machine (if v (· nothing) pause) ((dvar v 1)))
+        ⊥ ⊥))))
+  (test-case "55"
+    (test-equal
+     (do*
+      (· (if v nothing pause))
+      ((dvar v 0)))
+     `((
+        (machine (if v nothing (· pause)) ((dvar v 0)))
+        ⊥ ⊥))))
+  (test-case "56"
+    (test-equal
+     (do*
+      (· (if v (hat pause) nothing))
+      ((dvar v 12)))
+     `(((machine
+         (if v (· (hat pause)) nothing)
+         ((dvar v 12)))
+        ⊥ ⊥))))
+  (test-case "57"
+    (test-equal
+     (do*
+      (· (if v nothing (hat pause)))
+      ((dvar v 12)))
+     `((
+        (machine
+         (if v nothing (· (hat pause)))
+         ((dvar v 12)))
+        ⊥ ⊥
+        ))))
+  (test-case "58"
+    (test-equal
+     (do*
+      (if v (· pause) nothing)
+      ((dvar v 12)))
+     `((
+        (machine
+         (if v (hat pause) nothing)
+         ((dvar v 12)))
+        ⊥ (Succ zero)
+        ))))
+  (test-case "59"
+    (test-equal
+     (do*
+      (if v nothing (· pause))
+      ((dvar v 12)))
+     `((
+        (machine
+         (if v nothing (hat pause))
+         ((dvar v 12)))
+        ⊥ (Succ zero)
+        ))))
+  (test-case "60"
+      (test-equal
+     (do*
+      (· (:= v 4))
+      ((dvar v 2)))
+     `((
+        (machine (:= v 4)
+                 ((dvar v 4)))
+        ⊥
+        zero))))
 
 
 
@@ -920,7 +1151,28 @@
                 `(( (par nothing zero nothing zero) ⊥ ⊥ () )))
 
     (test-equal (do `(par nothing zero nothing zero))
-                `(( (par nothing nothing) ⊥ zero () )))))
+                `(( (par nothing nothing) ⊥ zero () )))
+
+    (test-equal
+     (do* (· (seq (shared c := 1 nothing) (suspend pause plU)))
+          ((dshared c 1 old)))
+     `((
+        (machine
+         (seq (·(shared c := 1 nothing)) (suspend pause plU))
+         ((dshared c 1 old)))
+        ⊥
+        ⊥
+        )))
+    (test-equal
+     (do*  (seq (· (shared c := 1 nothing)) (suspend pause plU))
+           ((dshared c 1 old)))
+     `((
+        (machine
+         (seq (shared c := 1 (· nothing)) (suspend pause plU))
+         ((dshared c 1 old)))
+        ⊥
+        ⊥
+        )))))
 
 (define-judgment-form esterel-eval
   #:mode     (→* I I O  O      O)
@@ -1021,7 +1273,9 @@
      (signal S p-check)
      (suspend p-check S)
      (present S p-check p-check)
-     (emit S))
+     (emit S)
+     (shared s := call p-check+sset))
+    (p-check+sset p-check (<= s call))
 
     (phat-check
      (hat pause)
@@ -1034,7 +1288,19 @@
      (present S phat-check phat-check)
      (par phat-check phat-check)
      (trap phat-check)
-     (signal S phat-check))
+     (signal S phat-check)
+     (shared s := call phat-check+sset))
+    (phat-check+sset
+     phat-check
+     (loop phat-check+sset)
+     (suspend phat-check+sset S)
+     (seq phat-check+sset p-check+sset)
+     (seq p-check+sset phat-check+sset)
+     ;; force a phat for the sake of loop safety
+     (present S phat-check+sset phat-check+sset)
+     (par phat-check+sset phat-check+sset)
+     (trap phat-check+sset)
+     (signal S phat-check+sset))
     (pbar-check p-check phat-check)
 
     (NL ()
@@ -1045,15 +1311,37 @@
   ;; constructive ->>, with testing checks
   #:mode     (cc->> I I O O       O)
   #:contract (cc->> M E M (S ...) k)
-  [(c->> (machine pbar data) E (machine qbar data_*) (S ...) k)
+  [(where (((machine qbar_r data_r*) (S_r ...) k_r) ...)
+          ,(judgment-holds
+            (c->> (machine pbar data) E (machine qbar data_*) (S ...) k)
+            ((machine qbar data_*) (S ...) k)))
+   (where (((machine qbar data_*) (S ...) k) any_2 ...)
+          (((machine qbar_r data_r*) (S_r ...) k_r) ...))
+   (where #t ,(andmap (curry equal? `k)
+                      `(k_r ...)))
+   (where #t ,(andmap (lambda (M) (alpha-equivalent? esterel-eval `(machine qbar data_*) M))
+                      `((machine qbar_r data_r*) ...)))
    ;(side-condition ,(displayln `(free-signals pbar)))
    ;(side-condition ,(displayln `((∈ S (free-signals pbar)) ...)))
    (where (#t ...) ((∈ S (free-emitted-signals pbar)) ...))
    (where E_2 (Can_S pbar ()))
    ;(side-condition ,(displayln `((∈ (S one) E) ...)))
    (where (#t ...) ((∈ (S (Succ zero)) E_2) ...))
+   (where #t
+          ,(for*/and ([Sl1 (in-list `((S_r ...) ...))]
+                      [Sl2 (in-list `((S_r ...) ...))])
+             (equal? (list->set Sl1) (list->set Sl2))))
+   (bars-match qbar k)
    -------
    (cc->> (machine pbar data) E (machine qbar data_*) (S ...) k)])
+
+  (define-judgment-form esterel-eval
+    #:mode (bars-match I I)
+    #:contract (bars-match pbar k)
+    [-------
+     (bars-match p zero)]
+    [-------
+     (bars-match phat (Succ zero))])
 
   (define-metafunction esterel-eval
     random-E : (S ...) -> E
@@ -1073,6 +1361,18 @@
      (->*/final (machine pdotdot data) E (machine qdotdot data_*) (S ...) k)])
 
   (test-case "eval bugs"
+    (test-judgment-holds
+     (c->>
+      (machine (par (signal f (emit S)) (shared v := 1 pause)) ()) ()
+      (machine (par (signal S_f (emit S_S)) (shared v := 1 (hat pause))) ((dshared v 1 ready)))
+      (S_S)
+      (Succ zero)))
+    (test-judgment-holds
+     (cc->>
+      (machine (par (signal f (emit S)) (shared v := 1 pause)) ()) ()
+      (machine (par (signal S_f (emit S_S)) (shared v := 1 (hat pause))) ((dshared v 1 ready)))
+      (S_S)
+      (Succ zero)))
 
     #|
     (test-judgment-holds
@@ -1246,7 +1546,7 @@
     (test-judgment-holds
      (cc->>
       (machine
-       (par (seq (emit Q) (emit Q)) (signal S_v pause))
+       (par (seq (emit Q) (emit Q)) (signal S pause))
        ())
       ()
       (machine
@@ -1316,6 +1616,9 @@
     [(traps-okay pbar NL)
      ---------
      (traps-okay (shared s := call pbar) NL)]
+
+    [---------
+     (traps-okay (<= s call) NL)]
     )
 
   (define-judgment-form esterel-check
@@ -1435,123 +1738,101 @@
 
     [(fix-env (machine (trap pbar) data))
      (machine (trap pbar_*) data_*)
-     (where (machine pbar_* data_*) (fix-env pbar data))]
+     (where (machine pbar_* data_*) (fix-env (machine pbar data)))]
 
     [(fix-env (machine (loop pbar) data))
      (machine (loop pbar_*) data_*)
-     (where (machine pbar_* data_*) (fix-env phat data))]
+     (where (machine pbar_* data_*) (fix-env (machine pbar data)))]
 
     [(fix-env (machine (signal S pbar) data))
      (machine (signal S pbar_*) data_*)
-     (where (machine pbar_* data_*) (fix-env phat data))]
+     (where (machine pbar_* data_*) (fix-env (machine pbar data)))]
 
-    [(fix-env (machine (suspend S pbar) data))
-     (machine (suspend S pbar_*) data_*)
-     (where (machine pbar_* data_*) (fix-env phat data))]
+    [(fix-env (machine (suspend pbar S) data))
+     (machine (suspend pbar_* S) data_*)
+     (where (machine pbar_* data_*) (fix-env (machine pbar data)))]
 
-    [(fix-env (seq pbar qbar) data)
-     (machine (seq ar pbar_* qbar_*) data_**)
-     (where (machine pbar_* data_*) (fix-env pbar data))
-     (where (machine qbar_* data_**) (fix-env qbar data_*))]
-    [(fix-env (par pbar qbar) data)
-     (machine (par pbar_* qbar_*) data_**)
-     (where (machine pbar_* data_*) (fix-env pbar data))
-     (where (machine qbar_* data_**) (fix-env qbar data_*))]
-    [(fix-env (present S pbar qbar) data)
-     (machine (present S pbar_* qbar_*) data_**)
-     (where (machine pbar_* data_*) (fix-env pbar data))
-     (where (machine qbar_* data_**) (fix-env qbar data_*))]
+    [(fix-env (machine (seq pbar qbar) data))
+     (machine (seq pbar_* qbar_*) (U data_* data_**))
+     (where (machine pbar_* data_*) (fix-env (machine pbar data)))
+     (where (machine qbar_* data_**) (fix-env (machine qbar data)))]
+
+    [(fix-env (machine (par pbar qbar) data))
+     (machine (par pbar_* qbar_*) (U data_* data_**))
+     (where (machine pbar_* data_*) (fix-env (machine pbar data)))
+     (where (machine qbar_* data_**) (fix-env (machine qbar data)))]
+
+    [(fix-env (machine (present S pbar qbar) data))
+     (machine (present S pbar_* qbar_*) (U data_* data_**))
+     (where (machine pbar_* data_*) (fix-env (machine pbar data)))
+     (where (machine qbar_* data_**) (fix-env (machine qbar data)))]
 
     [(fix-env (machine (shared s := call phat) data))
-     (machine (shared s := call* phat_*) data_**)
-     ;;; TODO
-     (where (data_elem ...))
-     (where data_* )
-     (where (machine phat_* data_**) (fix-env (machine phat data_*)))
-     (where call* (delete-cycle s call))]
+     (machine (shared s := call_* phat_*) data_**)
+     (where call_* (delete-bad-var-call s data call))
+     (where data_* (data<- data s (eval-call call_* data) ready))
+     (where (machine phat_* data_**) (fix-env (machine phat data_*)))]
+
     [(fix-env (machine (shared s := call p) data))
-     (machine (shared s := call* p_*) data_*)
-     (where (machine p_* data_*) (fix-env (machine p data)))
-     (where call* (delete-cycle s call))])
+     (machine (shared s := call_* p_*) data_**)
+     (where call_* (delete-bad-var-call s data call))
+     (where data_* (data<- data s (eval-call call_* data) old))
+     (where (machine p_* data_**) (fix-env (machine p data_*)))]
 
-  (define-judgment-form esterel-check
-    #:mode     (closed-shared I I)
-    #:contract (closed-shared M (s ...))
-    #|
-    [-----------
-     (closed-shared (machine (exit nat_h) data) (s ...))]
+    [(fix-env (machine (<= s call) data))
+     (machine (<= s_* call_*) data)
+     (where s_* (visible-s s data))
+     (where call_* (delete-bad-var-call s_* data call))])
 
-    [(closed-shared (machine pbar data) (s ...))
-     ----------
-     (closed-shared (machine (trap pbar) data) (s ...))]
+  (define-metafunction esterel-eval
+    visible-s : s data -> s
+    [(visible-s s data)
+     s
+     (where #t (∈ s (get-shared data)))]
+    [(visible-s s data) (get-random-s data)])
 
-    [(closed-shared (machine pbar data) (s ...))
-     ---------
-     (closed-shared (machine (loop pbar) data) (s ...))]
+  (define-metafunction esterel-eval
+    get-shared : data -> (s ...)
+    [(get-shared ()) ()]
+    [(get-shared ((dshared s any_1 any_2) data-elem ...))
+     (s s_r ...)
+     (where (s_r ...) (get-shared (data-elem ...)))]
+    [(get-shared ((dvar any_1 any_2) data-elem ...))
+     (get-shared (data-elem ...))])
 
-    [---------
-     (closed-shared (machine nothing data) (s ...))]
+  (define-metafunction esterel-eval
+    get-random-s : data -> s
+    [(get-random-s data)
+     ,(random-ref `(s ...))
+     (where (s ...) (get-shared data))])
 
-    [---------
-     (closed-shared (machine pause data) (s ...))]
+  (define-metafunction esterel-eval
+    delete-bad-var-call : s data call -> call
+    [(delete-bad-var-call s data datum) datum]
+    [(delete-bad-var-call s data (+ call ...))
+     (+ (delete-bad-var-call s data call) ...)]
+    [(delete-bad-var-call s data s) 1]
+    [(delete-bad-var-call s_0 data s_1)
+     s_1
+     (where #t (∈ s_1 (get-shared data)))]
+    [(delete-bad-var-call s_0 data s_1) 1])
 
-    [---------
-     (closed-shared (machine (hat pause) data) (s ...))]
+  (define-extended-language uniquify-lang esterel-eval
+    #:binding-forms
+    (shared s := call pbar #:refers-to s))
+  (define-metafunction uniquify-lang
+    ;uniquify : pbar -> pbar
+    [(uniquify (any ...))
+     ((uniquify any) ...)]
+    [(uniquify any) any])
 
-    [---------
-     (closed-shared (machine (emit S) data) (s ...))]
-
-    [(closed-shared (machine pbar_l data) (s ...))
-     (closed-shared (machine pbar_r data) (s ...))
-     ---------
-     (closed-shared (machine (seq pbar_l pbar_r) data) (s ...))]
-
-    [(closed-shared (machine pbar_l data) (s ...))
-     (closed-shared (machine pbar_r data) (s ...))
-     ---------
-     (closed-shared (machine (present S pbar_l pbar_r) data) (s ...))]
-
-    [(closed-shared (machine pbar_l data) (s ...))
-     (closed-shared (machine pbar_r data) (s ...))
-     ---------
-     (closed-shared (machine (par pbar_l pbar_r) data) (s ...))]
-
-    [(closed-shared (machine pbar data) (s ...))
-     ---------
-     (closed-shared (machine (signal S pbar) data) (s ...))]
-
-    [(closed-shared (machine pbar data) (s ...))
-     ---------
-     (closed-shared (machine (suspend pbar S) data) (s ...))]
-    |#
-
-    ;; this case should actually be phat, but for shared_of to work
-    ;; all S's must be in data, soo...
-    [(closed-shared (machine pbar data) (s s_1 ...))
-     (where (data-elem ... (dshared s datum shared-stat) data-elem_r ...) data)
-     (where (s_c ...) (shared-of call data))
-     (where #f (∈ s (s_c ...)))
-     (where (#t ...)
-            ((∈ s_c (s_1 ...)) ...))
-     ---------
-     (closed-shared
-      (machine (shared s := call pbar) data)
-      (s_1 ...))]
-
-    #|
-    [(closed-shared (machine p data) (s s_1 ...))
-    ---------
-    (closed-shared
-    (machine (shared s := call p) data) (s_1 ...))]
-    |#)
 
   (define-judgment-form esterel-check
     #:mode     (okay I)
-    #:contract (okay M)
+    #:contract (okay pbar)
     [(traps-okay pbar ())
-     (closed-shared (machine pbar data) ())
      --------
-     (okay (machine pbar data))]))
+     (okay pbar)]))
 
 (module+ slow
   (require (submod ".." test))
@@ -1560,8 +1841,7 @@
      (test-judgment-holds
       (cc->>
        (machine
-        (par (signal TY (signal a nothing)
-                     ())
+        (par (signal TY (signal a nothing))
              (signal S (par (par (emit R) pause)
                             pause)))
         ())
@@ -1591,56 +1871,104 @@
     ;(current-traced-metafunctions 'all)
     (redex-check
      esterel-check
-     #:satisfying (okay p-check data)
+     #:satisfying (okay p-check)
      (begin
-       (judgment-holds (cc->> (machine p-check data)
+       ;(displayln `p-check)
+       (judgment-holds (cc->> (fix-env (machine (uniquify p-check) ()))
                               (random-E (free-signal-vars p-check))
                               (machine pbar data_*) (S ...) k)))
      #:attempts 333
      )
     (redex-check
      esterel-check
-     #:satisfying (okay phat-check data)
+     #:satisfying (okay phat-check)
      (begin
-       (displayln `phat-check)
-       (judgment-holds (cc->> (fix-env (machine phat-check data))
+       ;(displayln `phat-check)
+       (judgment-holds (cc->> (fix-env (machine (uniquify phat-check) ()))
                               (random-E (free-signal-vars phat-check))
                               (machine pbar data_*) (S ...) k)))
      #:attempts 333
      )
     (redex-check
      esterel-check
-     #:satisfying (okay pbar-check data)
+     #:satisfying (okay pbar-check)
      (begin
-       (displayln `pbar-check)
-       (judgment-holds (cc->> (fix-env (machine pbar-check data))
+       ;(displayln `pbar-check)
+       (judgment-holds (cc->> (fix-env (machine (uniquify pbar-check) ()))
                               (random-E (free-signal-vars pbar-check))
                               (machine pbar data_*) (S ...) k)))
      #:attempts 333
      )))
 
+(module+ test
+  (test-case "eval part 2"
+    (test-judgment-holds
+     (c->>
+      (machine (par (signal pQ (emit x)) (emit C)) ())
+      ()
+      (machine (par (signal S_pQ (emit S_x)) (emit S_C)) ())
+      any
+      zero))
+    (test-judgment-holds
+     (cc->>
+      (machine (par (signal pQ (emit x)) (emit C)) ())
+      ()
+      (machine (par (signal S_pQ (emit S_x)) (emit S_C)) ())
+      any
+      zero))
+    (test-judgment-holds
+     (c->>
+      (fix-env
+       (machine
+        (seq (shared c := Q nothing) (suspend pause plU))
+        ()))
+      ()
+      (machine (seq (shared s_c := 1 nothing)
+                    (suspend (hat pause) S_p))
+               ((dshared s_c 1 ready)))
+      ()
+      (Succ zero)))
+    (test-judgment-holds
+     (cc->>
+      (fix-env
+       (machine
+        (seq (shared c := Q nothing) (suspend pause plU))
+        ()))
+      ()
+      (machine (seq (shared s_c := 1 nothing)
+                    (suspend (hat pause) S_p))
+               ((dshared s_c 1 ready)))
+      ()
+      (Succ zero)))))
+
 (module+ all (require (submod ".." test) (submod ".." slow) (submod ".." random)))
 
 (define-metafunction esterel-eval
-  remove-selected : pbar -> p
+  remove-selected : pdotdot -> p
   [(remove-selected p) p]
+  [(remove-selected (· pbar)) (remove-selected pbar)]
   [(remove-selected (hat pause)) pause]
-  [(remove-selected (present S pbar qbar))
-   (present S (remove-selected pbar) (remove-selected qbar))]
-  [(remove-selected (suspend S phat)) (suspend S (remove-selected phat))]
-  [(remove-selected (seq pbar qbar))
-   (seq (remove-selected pbar) (remove-selected qbar))]
-  [(remove-selected (suspend phat S)) (suspend (remove-selected phat) S)]
-  [(remove-selected (loop phat)) (loop (remove-selected phat))]
-  [(remove-selected (par pbar qbar))
-   (par (remove-selected pbar) (remove-selected qbar))]
-  [(remove-selected (trap phat)) (trap (remove-selected phat))]
-  [(remove-selected (var v := call phat))
-   (var v := call (remove-selected phat))]
-  [(remove-selected (shared s := call phat))
-   (shared s := call (remove-selected phbar))]
-  [(remove-selected (signal S phat))
-   (signal S (remove-selected phat))])
+  [(remove-selected (present S pdotdot qdotdot))
+   (present S (remove-selected pdotdot) (remove-selected qdotdot))]
+  [(remove-selected (suspend S pdotdot)) (suspend S (remove-selected pdotdot))]
+  [(remove-selected (seq pdotdot qdotdot))
+   (seq (remove-selected pdotdot) (remove-selected qdotdot))]
+  [(remove-selected (suspend pdotdot S)) (suspend (remove-selected pdotdot) S)]
+  [(remove-selected (loop pdotdot)) (loop (remove-selected pdotdot))]
+  [(remove-selected (loop lstat pdotdot)) (loop (remove-selected pdotdot))]
+  [(remove-selected (par pdotdot qdotdot))
+   (par (remove-selected pdotdot) (remove-selected qdotdot))]
+  [(remove-selected (par pdotdot any_1 qdotdot any_2))
+   (par (remove-selected pdotdot) (remove-selected qdotdot))]
+  [(remove-selected (trap pdotdot)) (trap (remove-selected pdotdot))]
+  [(remove-selected (var v := call pdotdot))
+   (var v := call (remove-selected pdotdot))]
+  [(remove-selected (shared s := call pdotdot))
+   (shared s := call (remove-selected pdotdot))]
+  [(remove-selected (signal S pdotdot))
+   (signal S (remove-selected pdotdot))]
+  [(remove-selected (signal S sstat pdotdot))
+   (signal S (remove-selected pdotdot))])
 
 (define-metafunction esterel-eval
   #|
@@ -1738,7 +2066,7 @@
 
   [(Can (loop go pdot) E)
    ((U (Can_S pdot E) (Can_S p E))
-    (U (without (Can_K pdot E) (0))
+    (U (without (Can_K pdot E) (zero))
        (Can_K p E))
     (U (Can_V pdot E)
        (Can_V p E)))
@@ -1757,7 +2085,7 @@
   [(Can (var v := call pdot) E)
    (Can pdot E)]
 
-  [(Can (shared s := call pdot))
+  [(Can (shared s := call pdot) E)
    (without_s (Can pdot E) s)]
 
   [(Can (:= v call) E)
@@ -1988,7 +2316,7 @@
   -> (E (k ...) (s ...)) or (s ...)
   |#
   [(without_s (E (k ...) (s_1 ...)) s)
-   (without_s (s_1 ...) s)]
+   (E (k ...) (without_s (s_1 ...) s))]
   [(without_s (s_1 ... s s_2 ...) s)
    (s_1 ... s_2 ...)]
   [(without_s (s_1 ...) s)
