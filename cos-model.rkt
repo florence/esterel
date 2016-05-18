@@ -553,7 +553,7 @@
     (→ (machine (var v := call pdot) data) E
        (machine (var v := call pdotdot) data_*) e k)]
 
-   [(where 1 (data-ref data v))
+   [(where #t (∉ (data-ref data v) (0)))
     ----------
     "54"
     (→ (machine (· (if v p q)) data) E
@@ -1267,15 +1267,43 @@
      pause
      (seq p-check p-check)
      (par p-check p-check)
-     ;(loop phat-check)
      (trap p-check)
      (exit nat)
      (signal S p-check)
      (suspend p-check S)
      (present S p-check p-check)
      (emit S)
-     (shared s := call p-check+sset))
-    (p-check+sset p-check (<= s call))
+     (shared s := call p-check+sset)
+     (var v := call p-check+vset))
+
+    (p-check+sset
+     p-check
+     (seq p-check+sset p-check+sset)
+     (par p-check+sset p-check+sset)
+     (trap p-check+sset)
+     (exit nat)
+     (signal S p-check+sset)
+     (suspend p-check+sset S)
+     (present S p-check+sset p-check+sset)
+     (var v := call p-check+sset+vset)
+     (<= s call))
+
+    (p-check+vset
+     p-check
+     (seq p-check+vset p-check+sset)
+     (par p-check+vset p-check)
+     (trap p-check+vset)
+     (exit nat)
+     (signal S p-check+vset)
+     (suspend p-check+vset S)
+     (present S p-check+vset p-check+vset)
+
+     (shared s := call p-check+sset+vset)
+     (:= v call))
+
+    (p-check+sset+vset
+     p-check+vset
+     p-check+sset)
 
     (phat-check
      (hat pause)
@@ -1617,9 +1645,20 @@
      ---------
      (traps-okay (shared s := call pbar) NL)]
 
+    [(traps-okay pbar NL)
+     ---------
+     (traps-okay (var v := call pbar) NL)]
+
     [---------
      (traps-okay (<= s call) NL)]
-    )
+
+    [---------
+     (traps-okay (:= v call) NL)]
+
+    [(traps-okay pbar NL)
+     (traps-okay qbar NL)
+     ---------
+     (traps-okay (if v pbar qbar) NL)])
 
   (define-judgment-form esterel-check
     #:mode (loops-okay I)
@@ -1782,7 +1821,24 @@
     [(fix-env (machine (<= s call) data))
      (machine (<= s_* call_*) data)
      (where s_* (visible-s s data))
-     (where call_* (delete-bad-var-call s_* data call))])
+     (where call_* (delete-bad-var-call s_* data call))]
+
+    [(fix-env (machine (var v := call pbar) data))
+     (machine (var v := call_* pbar_*) data_**)
+     (where call_* (delete-bad-var-call ,(gensym) data call))
+     (where data_* (data<- data v (eval-call call_* data)))
+     (where (machine pbar_* data_**) (fix-env (machine pbar data_*)))]
+
+    [(fix-env (machine (:= v call) data))
+     (machine (:= v_* call_*) data)
+     (where v_* (visible-v v data))
+     (where call_* (delete-bad-var-call ,(gensym) data call))]
+
+    [(fix-env (machine (if v pbar qbar) data))
+     (machine (if v_* pbar_* qbar_*) (U data_* data_**))
+     (where v_* (delete-bad-var-call ,(gensym) data v))
+     (where (machine pbar_* data_*) (fix-env (machine pbar data)))
+     (where (machine qbar_* data_**) (fix-env (machine qbar data)))])
 
   (define-metafunction esterel-eval
     visible-s : s data -> s
@@ -1790,6 +1846,14 @@
      s
      (where #t (∈ s (get-shared data)))]
     [(visible-s s data) (get-random-s data)])
+
+  (define-metafunction esterel-eval
+    visible-v : v data -> v
+    [(visible-v v data)
+     s
+     (where #t (∈ v (get-shared data)))]
+    [(visible-v v data) (get-random-v data)])
+
 
   (define-metafunction esterel-eval
     get-shared : data -> (s ...)
@@ -1807,6 +1871,24 @@
      (where (s ...) (get-shared data))])
 
   (define-metafunction esterel-eval
+    get-random-v : data -> s
+    [(get-random-v data)
+     ,(random-ref `(v ...))
+     (where (v ...) (get-unshared data))])
+
+  (define-metafunction esterel-eval
+    get-unshared : data -> (v ...)
+    [(get-unshared ()) ()]
+    [(get-unshared ((dvar v any) data-elem ...))
+     (v v_r ...)
+     (where (v_r ...) (get-unshared (data-elem ...)))]
+    [(get-unshared (any data-elem ...))
+     (v_r ...)
+     (where (v_r ...) (get-unshared (data-elem ...)))])
+
+
+
+  (define-metafunction esterel-eval
     delete-bad-var-call : s data call -> call
     [(delete-bad-var-call s data datum) datum]
     [(delete-bad-var-call s data (+ call ...))
@@ -1819,7 +1901,8 @@
 
   (define-extended-language uniquify-lang esterel-eval
     #:binding-forms
-    (shared s := call pbar #:refers-to s))
+    (shared s := call pbar #:refers-to s)
+    (var v := call pbar #:refers-to v))
   (define-metafunction uniquify-lang
     ;uniquify : pbar -> pbar
     [(uniquify (any ...))
@@ -1867,6 +1950,10 @@
 
 (module+ random
   (require (submod ".." test))
+  (define-syntax-rule (tjh e)
+    (begin
+      (test-judgment-holds e)
+      (judgment-holds e)))
   (test-case "random tests"
     ;(current-traced-metafunctions 'all)
     (redex-check
@@ -1874,9 +1961,9 @@
      #:satisfying (okay p-check)
      (begin
        ;(displayln `p-check)
-       (judgment-holds (cc->> (fix-env (machine (uniquify p-check) ()))
-                              (random-E (free-signal-vars p-check))
-                              (machine pbar data_*) (S ...) k)))
+       (tjh (cc->> (fix-env (machine (uniquify p-check) ()))
+                   (random-E (free-signal-vars p-check))
+                   (machine pbar data_*) (S ...) k)))
      #:attempts 333
      )
     (redex-check
@@ -1884,9 +1971,9 @@
      #:satisfying (okay phat-check)
      (begin
        ;(displayln `phat-check)
-       (judgment-holds (cc->> (fix-env (machine (uniquify phat-check) ()))
-                              (random-E (free-signal-vars phat-check))
-                              (machine pbar data_*) (S ...) k)))
+       (tjh (cc->> (fix-env (machine (uniquify phat-check) ()))
+                   (random-E (free-signal-vars phat-check))
+                   (machine pbar data_*) (S ...) k)))
      #:attempts 333
      )
     (redex-check
@@ -1894,9 +1981,9 @@
      #:satisfying (okay pbar-check)
      (begin
        ;(displayln `pbar-check)
-       (judgment-holds (cc->> (fix-env (machine (uniquify pbar-check) ()))
-                              (random-E (free-signal-vars pbar-check))
-                              (machine pbar data_*) (S ...) k)))
+       (tjh (cc->> (fix-env (machine (uniquify pbar-check) ()))
+                   (random-E (free-signal-vars pbar-check))
+                   (machine pbar data_*) (S ...) k)))
      #:attempts 333
      )))
 
