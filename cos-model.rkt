@@ -1,5 +1,6 @@
 #lang racket
 (require redex racket/random)
+(provide (all-defined-out))
 (module+ test
   (provide (all-defined-out))
   (require rackunit (prefix-in rackunit: rackunit))
@@ -1174,6 +1175,65 @@
         ⊥
         )))))
 
+
+(define-metafunction esterel-eval
+  eval : M E -> (M (S ...))
+  [(eval (machine pbar data) E)
+   (M (S ...))
+   (where ((M (S ...)))
+          ,(judgment-holds
+            (eval->> (machine (· pbar) data) E
+                     M (S ...))
+            (M (S ...))))])
+;; judgment form for raw evaluation
+(define-judgment-form esterel-eval
+  #:mode     (eval->> I I O O)
+  #:contract (eval->> M E M (S ...))
+
+  [(where
+    ((M S k) any ...)
+    ,(judgment-holds
+      (→ (machine pdotdot data) E
+         (machine pdotdot_* data_*) S k)
+      ((machine pdotdot_* data_*) S k)))
+   (where #f ,(equal? `⊥ `k))
+   -----------
+   (eval->> (machine pdotdot data) E
+            M (S))]
+  [(where
+    ((M k) any ...)
+    ,(judgment-holds
+      (→ (machine pdotdot data) E
+         (machine pdotdot_* data_*) ⊥ k)
+      ((machine pdotdot_* data_*) k)))
+   (where #f ,(equal? `⊥ `k))
+   -----------
+   (eval->> (machine pdotdot data) E
+            M ())]
+
+  [(where
+    ((M S_n) any ...)
+    ,(judgment-holds
+      (→ (machine pdotdot data) E
+         (machine pdotdot_* data_*) S ⊥)
+      ((machine pdotdot_* data_*) S)))
+
+   (eval->> M E (machine pdotdot_** data_**) (S ...))
+   -----------
+   (eval->> (machine pdotdot data) E
+            (machine pdotdot_** data_**) (S_n S ...))]
+  [(where
+    (M any ...)
+    ,(judgment-holds
+      (→ (machine pdotdot data) E
+         (machine pdotdot_* data_*) ⊥ ⊥)
+      (machine pdotdot_* data_*)))
+
+   (eval->> M E (machine pdotdot_** data_**) (S ...))
+   -----------
+   (eval->> (machine pdotdot data) E
+            (machine pdotdot_** data_**) (S ...))])
+
 (define-judgment-form esterel-eval
   #:mode     (→* I I O  O      O)
   #:contract (→* M E M (S ...) k)
@@ -1290,7 +1350,7 @@
 
     (p-check+vset
      p-check
-     (seq p-check+vset p-check+sset)
+     (seq p-check+vset p-check+vset)
      (par p-check+vset p-check)
      (trap p-check+vset)
      (exit nat)
@@ -1343,21 +1403,24 @@
           ,(judgment-holds
             (c->> (machine pbar data) E (machine qbar data_*) (S ...) k)
             ((machine qbar data_*) (S ...) k)))
+   (where (M_* (S_* ...)) (eval (machine pbar data) E))
    (where (((machine qbar data_*) (S ...) k) any_2 ...)
           (((machine qbar_r data_r*) (S_r ...) k_r) ...))
    (where #t ,(andmap (curry equal? `k)
                       `(k_r ...)))
    (where #t ,(andmap (lambda (M) (alpha-equivalent? esterel-eval `(machine qbar data_*) M))
-                      `((machine qbar_r data_r*) ...)))
+                      `(M_* (machine qbar_r data_r*) ...)))
    ;(side-condition ,(displayln `(free-signals pbar)))
    ;(side-condition ,(displayln `((∈ S (free-signals pbar)) ...)))
-   (where (#t ...) ((∈ S (free-emitted-signals pbar)) ...))
+   (where (#t ...) ((∈ S_* (free-emitted-signals pbar)) ...
+                    (∈ S (free-emitted-signals pbar)) ...))
    (where E_2 (Can_S pbar ()))
    ;(side-condition ,(displayln `((∈ (S one) E) ...)))
-   (where (#t ...) ((∈ (S (Succ zero)) E_2) ...))
+   (where (#t ...) ((∈ (S_* (Succ zero)) E_2) ...
+                    (∈ (S (Succ zero)) E_2) ...))
    (where #t
-          ,(for*/and ([Sl1 (in-list `((S_r ...) ...))]
-                      [Sl2 (in-list `((S_r ...) ...))])
+          ,(for*/and ([Sl1 (in-list `((S_* ...) (S_r ...) ...))]
+                      [Sl2 (in-list `((S_* ...) (S_r ...) ...))])
              (equal? (list->set Sl1) (list->set Sl2))))
    (bars-match qbar k)
    -------
@@ -1961,9 +2024,10 @@
      #:satisfying (okay p-check)
      (begin
        ;(displayln `p-check)
-       (tjh (cc->> (fix-env (machine (uniquify p-check) ()))
-                   (random-E (free-signal-vars p-check))
-                   (machine pbar data_*) (S ...) k)))
+       (term-let ([p `(uniquify p-check)])
+                 (tjh (cc->> (fix-env (machine p ()))
+                             (random-E (free-signal-vars p))
+                             (machine pbar data_*) (S ...) k))))
      #:attempts 333
      )
     (redex-check
@@ -1971,9 +2035,10 @@
      #:satisfying (okay phat-check)
      (begin
        ;(displayln `phat-check)
-       (tjh (cc->> (fix-env (machine (uniquify phat-check) ()))
-                   (random-E (free-signal-vars phat-check))
-                   (machine pbar data_*) (S ...) k)))
+       (term-let ([p `(uniquify phat-check)])
+                 (tjh (cc->> (fix-env (machine p ()))
+                             (random-E (free-signal-vars p))
+                             (machine pbar data_*) (S ...) k))))
      #:attempts 333
      )
     (redex-check
@@ -1981,9 +2046,10 @@
      #:satisfying (okay pbar-check)
      (begin
        ;(displayln `pbar-check)
-       (tjh (cc->> (fix-env (machine (uniquify pbar-check) ()))
-                   (random-E (free-signal-vars pbar-check))
-                   (machine pbar data_*) (S ...) k)))
+       (term-let ([p `(uniquify pbar-check)])
+                 (tjh (cc->> (fix-env (machine p ()))
+                             (random-E (free-signal-vars p))
+                             (machine pbar data_*) (S ...) k))))
      #:attempts 333
      )))
 
