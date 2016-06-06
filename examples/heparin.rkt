@@ -58,13 +58,15 @@
          (trap& checking
                 (par& (seq& (await& check-aptt) (exit& checking))
                       (loop&
-                       (present& theraputic nothing& check-aptt&)
+                       (present& theraputic nothing& (emit& check-aptt))
                        (await& 6 hour));; should actually be 6*60 minutes?
                       (loop&
-                       (present& theraputic check-aptt&)
+                       (present& theraputic (emit& check-aptt))
                        (await& 24 hour))))))))))
-  (pretty-print (machine-prog heparin))
-  (eval-top heparin '((aptt 10))))
+  #;(pretty-print (machine-prog heparin))
+  (time
+   (with-handlers ([void values])
+     (eval-top heparin '((aptt 10))))))
 (module* cbs racket
   (require esterel/front-end (for-syntax syntax/parse racket/syntax))
   (module+ test (require "test-harness.rkt"))

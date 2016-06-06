@@ -133,7 +133,9 @@
    (if v pdot q)
    (if v p qdot))
 
-  (call (+ call call) (+ call) (+) v s datum)
+  (call (+ call call) (+ call) (+) v s
+        (func s ... datum)
+        datum)
   (datum natural
          any;; ENV->any/c racket functions
          )
@@ -640,6 +642,7 @@
    (shared-of call data)]
   [(shared-of (+ call_1 call_2) data)
    (U (shared-of call_1 data) (shared-of call_2 data))]
+  [(shared-of (func s ... datum) data) (s ...)]
   [(shared-of datum data) ()])
 
 (define-extended-language ref-lang esterel-eval
@@ -665,6 +668,10 @@
   [(eval-call (+ call ...) data)
    ,(apply + `(datum ...))
    (where (datum ...) ((eval-call call data) ...))]
+  [(eval-call (func s ... any) data)
+   ,(if (esterel-top-procedure? `any)
+        (`any `data)
+        `any)]
   [(eval-call any data)
    ,(if (esterel-top-procedure? `any)
         (`any `data)
@@ -1226,6 +1233,16 @@
           ,(judgment-holds
             (eval->> (machine (· pbar) data) E
                      M (S ...))
+            (M (S ...))))]
+  [(eval (machine pbar data) E)
+   ,(error 'eval
+           "evaluation failed for ~a.\nGot ~a\n"
+           (pretty-format (list 'eval `(machine pbar data) `E))
+           (pretty-format `(any ...)))
+   (where (any ...)
+          ,(judgment-holds
+            (c->> (machine (· pbar) data) E
+                     M k (S ...))
             (M (S ...))))])
 ;; judgment form for raw evaluation
 (define-judgment-form esterel-eval
@@ -2683,4 +2700,40 @@
        (loop (seq (present B2 (emit B2) nothing) pause))))
      (loop (seq (present A1 (emit A1) nothing) pause))))
    (loop (seq (present O4 (emit O4) nothing) pause))))
-    )))
+    ))
+
+
+  (test-case "abro"
+    (judgment-holds
+     (cc->>
+      (machine
+       (loop
+        (trap
+         (par
+          (seq
+           (suspend
+            (seq
+             (seq
+              (par
+               (trap
+                (loop
+                 (seq
+                  pause
+                  (present A (exit (Succ (Succ zero))) nothing))))
+               (trap
+                (loop
+                 (seq
+                  pause
+                  (present B (exit (Succ (Succ zero))) nothing)))))
+              (emit O))
+             (loop pause))
+            R3)
+           (exit (Succ (Succ zero))))
+          (seq
+           (trap
+            (loop
+             (seq pause (present R (exit (Succ (Succ zero))) nothing))))
+           (exit (Succ (Succ zero)))))))
+       ())
+      ((A (Succ zero)) (B zero) (R zero))
+      any_1 any_2 any_3))))

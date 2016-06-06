@@ -65,7 +65,7 @@
            [(list x ... (list (== s) d) y ...)
             (term (data<- ,store ,s ,d ready))]
            [else (term (data<- ,store ,s ,d old))])]
-        [s in-store])))
+        [s store])))
   (define E
     (for/list ([i (in-list valid-ins)])
       (match-define (or (list S _) S) i)
@@ -99,11 +99,21 @@
                              (for/hash ([i (in-syntax #'(in ... out ...))])
                                (define i* (syntax-e (syntax-parse i [(s _) #'s] [_ i])))
                                (values i* (generate-temporary i*)))])
-               (wrap-outs #'(out ...) (wrap-ins #'(in ...) #'machine))))
-           (local-expand-esterel init-expr))))
+               (local-expand-esterel
+                (wrap-outs #'(out ...) (wrap-ins #'(in ...) #'machine)))))
+           init-expr)))
+     (define/with-syntax (out/value ...)
+       (for/list ([o (in-syntax #'(out ...))]
+                  #:when
+                  (syntax-parse o
+                    [(a b) #t]
+                    [_ #f]))
+         (syntax-parse o
+           [(n v)
+            #`(dshared n v old)])))
      #'(let ([raw-prog (term t)])
          ;(loop-safe! raw-prog) TODO
-         (make-machine raw-prog (term ()) '(in ...)))]))
+         (make-machine raw-prog (term (out/value ...)) '(in ...)))]))
 
 (define-for-syntax (wrap-outs outs stx)
   (syntax-parse outs
@@ -113,13 +123,13 @@
      #`(signal& s_local := c
                 (par&
                  #,(wrap-outs #'(r ...) stx)
-                 (loop& (present& s_local (emit& s (? s_local))) pause&)))]
+                 (loop& (present& s_local (emit/noreplace& s (? s_local))) pause&)))]
     [(s:id r ...)
      (define/with-syntax s_local (get-signal-replacement #'s))
      #`(signal& s_local
                 (par&
                  #,(wrap-outs #'(r ...) stx)
-                 (loop& (present& s_local (emit& s)) pause&)))]))
+                 (loop& (present& s_local (emit/noreplace& s)) pause&)))]))
 (define-for-syntax (wrap-ins ins stx)
   (syntax-parse ins
     [() stx]
@@ -128,13 +138,13 @@
      #`(signal& s_local := c
                 (par&
                  #,(wrap-ins #'(r ...) stx)
-                 (loop& (present& s (emit& s_local (? s))) pause&)))]
+                 (loop& (present/noreplace& s (emit& s_local (?/noreplace s))) pause&)))]
     [(s:id r ...)
      (define/with-syntax s_local (get-signal-replacement #'s))
      #`(signal& s_local
                 (par&
                  #,(wrap-ins #'(r ...) stx)
-                 (loop& (present& s (emit& s_local)) pause&)))]))
+                 (loop& (present/noreplace& s (emit& s_local)) pause&)))]))
 
 (define-for-syntax valid-esterel-forms (mutable-free-id-set))
 (define-syntax define-esterel-form
@@ -167,17 +177,21 @@
   (local-expand stx 'expression core-esterel-forms))
 
 (define-syntax-parameter ENV (lambda (stx) (raise-syntax-error #f "no" stx)))
+(define-for-syntax shared-vars-set (make-parameter #f))
 (define-for-syntax (delayed-call e)
   (delay
     (with-syntax ([env #'env])
-      #`(unquote
-         #,(local-expand
-            #`(make-esterel-top-procedure
-               (lambda (env)
-                 (syntax-parameterize ([ENV (make-rename-transformer #'env)])
-                   #,e)))
-            'expression
-            null)))))
+      (parameterize ([shared-vars-set (mutable-free-id-set)])
+        (define/with-syntax f
+          (local-expand
+           #`(make-esterel-top-procedure
+              (lambda (env)
+                (syntax-parameterize ([ENV (make-rename-transformer #'env)])
+                  #,e)))
+           'expression
+           null))
+        (define/with-syntax (var ...)  (free-id-set->list (shared-vars-set)))
+        #`(func var ... (unquote f))))))
 (begin-for-syntax
   (define-syntax-class msg
     (pattern _:id)
@@ -189,9 +203,6 @@
     (pattern e
              #:attr func (delayed-call #'e))))
 
-
-
-
 (define-esterel-form nothing& (syntax-parser [_:id #'nothing]))
 (define-esterel-form pause& (syntax-parser [_:id #'pause]))
 (define-esterel-form exit&
@@ -199,14 +210,29 @@
     [(_ T:id) #`(exit (to-nat #,(get-exit-code #'T)))]))
 (define-esterel-form emit&
   (syntax-parser
-    [(_ S:id) #`(emit #,(get-signal-replacement #'S))]
+    [(_ S:id)
+     #`(emit #,(get-signal-replacement #'S))]
     [(form S:id call:call)
      #`(seq& (form S)
-             (<= #,(get-signal-var #'S) call.func))]))
+             (<= #,(get-signal-var (get-signal-replacement #'S)) call.func))]))
+(define-esterel-form emit/noreplace&
+  (syntax-parser
+    [(_ S:id) #`(emit S)]
+    [(form S:id call:call)
+     #`(seq& (form S)
+             (<= S call.func))]))
 (define-esterel-form present&
   (syntax-parser
     [(_ (~or (or S:id) S:id) th:est el:est)
      #`(present #,(get-signal-replacement #'S) th.exp el.exp)]
+    [(p S:msg th:expr) #'(p S th nothing&)]
+    ;; WARNING duplicates code
+    [(p (or S1:id S2:id ...) th:expr el:expr)
+     #'(p S1 th (p (or S2 ...) th el))]))
+(define-esterel-form present/noreplace&
+  (syntax-parser
+    [(_ (~or (or S:id) S:id) th:est el:est)
+     #`(present S th.exp el.exp)]
     [(p S:msg th:expr) #'(p S th nothing&)]
     ;; WARNING duplicates code
     [(p (or S1:id S2:id ...) th:expr el:expr)
@@ -247,10 +273,10 @@
 (define-esterel-form signal&
   (syntax-parser
     #:datum-literals (:=)
-    [(form S:id := e:expr p:est)
+    [(form S:id := e:call p:est)
      (parameterize ([signal-var-map (extend-signal-var-map-for #'S)])
        #`(signal S
-               (shared #,(get-signal-var #'S) := e p.exp)))]
+               (shared #,(get-signal-var #'S) := e.func p.exp)))]
     [(form S:id := e:call p:expr ...)
      #`(form S := e.func (seq& p ...))]
     [(s (S:id) p:expr ...)
@@ -259,15 +285,25 @@
      #'(s S_1 (s (S ...) p ...))]
     [(_ S:id p:est)
      #`(signal S p.exp)]
-    [(_ S:id p:expr ...)
-     #`(signal& S (seq& p ...))]))
+    [(form S:id p:expr ...)
+     #`(form S (seq& p ...))]))
+
+(define-syntax ?/noreplace
+  (syntax-parser
+    [(? s:id)
+     (free-id-set-add! (shared-vars-set) #'s)
+     #`(redex-let esterel-eval
+                  ([(any_1 (... ...) (dshared s datum shared-stat) any_2 (... ...))
+                    ENV])
+                  (term datum))]))
 
 (define-syntax ?
   (syntax-parser
     [(? s:id)
      (define/with-syntax svar (get-signal-var (get-signal-replacement #'s)))
+     (free-id-set-add! (shared-vars-set) #'svar)
      #`(redex-let esterel-eval
-                  ([((any_1 (... ...) (dshared svar datum sstat) any_2 (... ...)))
+                  ([(any_1 (... ...) (dshared svar datum shared-stat) any_2 (... ...))
                     ENV])
                   (term datum))]))
 (define-syntax get-var
@@ -358,7 +394,9 @@
 
 (define-for-syntax signal-var-map (make-parameter (make-hash)))
 (define-for-syntax (extend-signal-var-map-for s)
-  (hash-set (signal-var-map) (syntax-e s) (gensym)))
+  (if (hash-has-key? (signal-var-map) (syntax-e s))
+      (signal-var-map)
+      (hash-set (signal-var-map) (syntax-e s) (generate-temporary s))))
 (define-for-syntax (get-signal-var s)
   (hash-ref (signal-var-map) (syntax-e s)))
 
@@ -367,3 +405,18 @@
   (hash-set (signal-replace-map) (syntax-e s) (gensym)))
 (define-for-syntax (get-signal-replacement s)
   (hash-ref (signal-replace-map) (syntax-e s) s))
+
+(module+ test
+  (require rackunit)
+  (test-begin
+    (define-values (M S...)
+      (eval-top
+       (esterel-machine
+        #:inputs ((I 0))
+        #:outputs ((O 0))
+        (present& I
+                  (if& (= (? I) 1)
+                       (emit& O 1)
+                       nothing&)))
+       '((I 1))))
+    (check-equal? S... '(O))))
