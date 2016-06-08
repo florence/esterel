@@ -63,10 +63,36 @@
                       (loop&
                        (present& theraputic (emit& check-aptt))
                        (await& 24 hour))))))))))
-  #;(pretty-print (machine-prog heparin))
+  (define mach (machine-prog heparin))
+  (require esterel/cos-model redex/reduction-semantics)
+  (let loop ([mach `(· ,mach)]
+             [store
+              `((dshared aptt 10 ready)
+                (dshared give-bolus 0 old)
+                (dshared increase 0 old)
+                (dshared decrease 0 old))])
+    (pretty-print mach)
+    (match-define (list (list mach* store*))
+      (time
+       (judgment-holds
+        (det->
+         (machine ,mach
+                  ,store)
+         ((aptt (Succ zero))
+          (hour zero)
+          (minute zero))
+         (machine pdotdot data)
+         any_2
+         any_3)
+
+        (pdotdot data))))
+
+    (loop mach* store*))
+  #;
   (time
    (with-handlers ([void values])
-     (eval-top heparin '((aptt 10))))))
+     (eval-top heparin '((aptt 10)))))
+  )
 (module* cbs racket
   (require esterel/front-end (for-syntax syntax/parse racket/syntax))
   (module+ test (require "test-harness.rkt"))

@@ -1,4 +1,4 @@
-#lang racket
+#lang debug racket
 (provide esterel-machine
          define-esterel-form
          eval-top
@@ -73,6 +73,8 @@
         [(list _ ... (or (== S) (list (== S) _)) _ ...)
          (list S '(Succ zero))]
         [else (list S 'zero)])))
+  (pretty-print in-store*)
+  (pretty-print E)
   (match-define (list (list 'machine out-prog out-store) out-E)
     (term (eval (machine ,in-prog ,in-store*) ,E)))
   (values (make-machine out-prog out-store valid-ins)
