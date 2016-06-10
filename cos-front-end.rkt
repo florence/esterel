@@ -91,18 +91,20 @@
         machine)
      (define/with-syntax t
        (parameterize ([in-machine? #t])
-         (parameterize ([signal-var-map
+         (parameterize (#;
+                        [signal-var-map
                          (for*/hash ([i* (in-syntax #'(in ... out ...))]
                                      [i (in-value (syntax-parse i* [(s _) #'s] [_ #f]))]
                                      #:when i)
                            (values (syntax-e i) (generate-temporary i)))])
            (define init-expr
-             (parameterize ([signal-replace-map
+             (parameterize (#;
+                            [signal-replace-map
                              (for/hash ([i (in-syntax #'(in ... out ...))])
                                (define i* (syntax-e (syntax-parse i [(s _) #'s] [_ i])))
                                (values i* (generate-temporary i*)))])
-               (local-expand-esterel
-                (wrap-outs #'(out ...) (wrap-ins #'(in ...) #'machine)))))
+               (wrap-shared #'(in ... out ...)
+                            (local-expand-esterel #'machine))))
            init-expr)))
      (define/with-syntax (out/value ...)
        (for/list ([o (in-syntax #'(out ...))]
@@ -113,40 +115,28 @@
          (syntax-parse o
            [(n v)
             #`(dshared n v old)])))
-     #'(let ([raw-prog (term t)])
+     (define/with-syntax (in/sym ...)
+       (for/list ([x (in-syntax #'(in ...))])
+         (syntax-parse x
+           [(i _) #'i]
+           [i #'i])))
+     (define/with-syntax (out/sym ...)
+       (for/list ([x (in-syntax #'(out ...))])
+         (syntax-parse x
+           [(i _) #'i]
+           [i #'i])))
+     #'(let-values ([(raw-prog) (fix-i/o (term t) '(in/sym ...) '(out/sym ...))])
          ;(loop-safe! raw-prog) TODO
          (make-machine raw-prog (term (out/value ...)) '(in ...)))]))
 
-(define-for-syntax (wrap-outs outs stx)
-  (syntax-parse outs
+(define-for-syntax (wrap-shared vars stx)
+  (syntax-parse vars
     [() stx]
     [((s:id c) r ...)
-     (define/with-syntax s_local (get-signal-replacement #'s))
-     #`(signal& s_local := c
-                (par&
-                 #,(wrap-outs #'(r ...) stx)
-                 (loop& (present& s_local (emit/noreplace& s (? s_local))) pause&)))]
+     ;(define/with-syntax s_var (get-signal-var #'s))
+     #`(shared s := c #,(wrap-shared #'(r ...) stx))]
     [(s:id r ...)
-     (define/with-syntax s_local (get-signal-replacement #'s))
-     #`(signal& s_local
-                (par&
-                 #,(wrap-outs #'(r ...) stx)
-                 (loop& (present& s_local (emit/noreplace& s)) pause&)))]))
-(define-for-syntax (wrap-ins ins stx)
-  (syntax-parse ins
-    [() stx]
-    [((s:id c) r ...)
-     (define/with-syntax s_local (get-signal-replacement #'s))
-     #`(signal& s_local := c
-                (par&
-                 #,(wrap-ins #'(r ...) stx)
-                 (loop& (present/noreplace& s (emit& s_local (?/noreplace s))) pause&)))]
-    [(s:id r ...)
-     (define/with-syntax s_local (get-signal-replacement #'s))
-     #`(signal& s_local
-                (par&
-                 #,(wrap-ins #'(r ...) stx)
-                 (loop& (present/noreplace& s (emit& s_local)) pause&)))]))
+     (wrap-shared #'(r ...) stx)]))
 
 (define-for-syntax valid-esterel-forms (mutable-free-id-set))
 (define-syntax define-esterel-form
@@ -400,7 +390,7 @@
       (signal-var-map)
       (hash-set (signal-var-map) (syntax-e s) (generate-temporary s))))
 (define-for-syntax (get-signal-var s)
-  (hash-ref (signal-var-map) (syntax-e s)))
+  (hash-ref (signal-var-map) (syntax-e s) s))
 
 (define-for-syntax signal-replace-map (make-parameter (make-hash)))
 (define-for-syntax (extend-signal-replace-map-for s)
@@ -422,3 +412,115 @@
                        nothing&)))
        '((I 1))))
     (check-equal? S... '(O))))
+
+
+(define (fix-i/o prog ins outs)
+  (define-values (prog* in-map out-map) (needed+sub prog ins outs))
+  (define new/ins
+    (for/fold ([p prog*])
+              ([(old new) (in-hash in-map)])
+      `(signal ,new
+               (par
+                ,p
+                (loop
+                 (seq
+                  (present ,old (emit ,new) nothing)
+                  pause))))))
+  (define new/outs
+    (for/fold ([p new/ins])
+              ([(old new) (in-hash out-map)])
+      `(signal ,new
+               (par
+                ,p
+                (loop
+                 (seq
+                  (present ,new (emit ,old) nothing)
+                  pause))))))
+  new/outs)
+(define (needed+sub prog ins outs [ins-hash (hash)] [outs-hash (hash)])
+  (define (recur p #:ins [in* ins-hash] #:outs [out* outs-hash])
+    (needed+sub p ins outs in* out*))
+  (define (get S)
+    (or (hash-ref outs-hash S #f)
+        (hash-ref ins-hash S #f)
+        S))
+  (define do
+    (term-match/single
+     esterel-eval
+     [nothing (values prog ins-hash outs-hash)]
+     [pause (values prog ins-hash outs-hash)]
+     [(seq p q)
+      (let ()
+        (define-values (l1 l2 l3) (recur `p))
+        (define-values (r1 r2 r3) (recur `q #:ins l2 #:outs l3))
+        (values `(seq ,l1 ,r1) r2 r3))]
+     [(par p q)
+      (let ()
+         (define-values (l1 l2 l3) (recur `p))
+         (define-values (r1 r2 r3) (recur `q #:ins l2 #:outs l3))
+         (values `(par ,l1 ,r1) r2 r3))]
+     [(loop p)
+      (let ()
+         (define-values (a b c) (recur `p))
+         (values `(loop ,a) b c))]
+     [(suspend p S)
+      (let ()
+         (cond [(hash-ref outs-hash `S #f) =>
+                (lambda (nS)
+                  (recur `(suspend p ,nS)))]
+               [(member `S outs)
+                (recur prog #:outs (hash-set outs-hash `S (gensym `S)))]
+               [else
+                (define-values (l1 l2 l3) (recur `p))
+                (values `(suspend ,l1 S) l2 l3)]))]
+     [(signal S p)
+      (let ()
+         (define-values (a b c) (recur `p))
+         (values `(signal S ,a) b c))]
+     [(emit S)
+      (let ()
+         (cond [(hash-ref ins-hash `S #f) =>
+                (lambda (nS)
+                  (values `(emit ,nS) ins-hash outs-hash))]
+               [(member `S ins)
+                (recur prog #:ins (hash-set ins-hash `S (gensym `S)))]
+               [(hash-ref outs-hash `S #f) =>
+                (lambda (nS)
+                  (values `(emit ,nS) ins-hash outs-hash))]
+               [else (values prog ins-hash outs-hash)]))]
+     [(present S p q)
+      (let ()
+         (cond [(hash-ref outs-hash `S #f) =>
+                (lambda (nS)
+                  (recur `(present ,nS p q)))]
+               [(member `S outs)
+                (recur prog #:outs (hash-set outs-hash `S (gensym `S)))]
+               [(hash-ref ins-hash `S #f) =>
+                (lambda (nS)
+                  (recur `(present ,nS p q)))]
+               [else
+                (define-values (l1 l2 l3) (recur `p))
+                (define-values (r1 r2 r3) (recur `q #:ins l2 #:outs l3))
+                (values `(present S ,l1 ,r1) r2 r3)]))]
+     [(trap p)
+      (let ()
+         (define-values (a b c) (recur `p))
+         (values `(trap ,a) b c))]
+     [(exit _) (values prog ins-hash outs-hash)]
+     [(var v := any p)
+      (let ()
+         (define-values (a b c) (recur `p))
+         (values `(var v := any ,a) b c))]
+     [(shared s := any p)
+      (let ()
+        (define-values (a b c) (recur `p))
+        (values `(shared s := any ,a) b c))]
+     [(:= v call) (values prog ins-hash outs-hash)]
+     [(<= s call) (values prog ins-hash outs-hash)]
+     [(if v p q)
+      (let ()
+         (define-values (l1 l2 l3) (recur `p))
+         (define-values (r1 r2 r3) (recur `q #:ins l2 #:outs l3))
+         (values `(if v ,l1 ,r1) r2 r3))]))
+  ;; -- in --
+  (do prog))
