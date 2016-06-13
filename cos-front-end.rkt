@@ -23,7 +23,7 @@
          cond&
          ?
          machine-prog
-         (for-syntax msg))
+         (for-syntax msg call est))
 (require esterel/cos-model
          redex/reduction-semantics
          racket/stxparam

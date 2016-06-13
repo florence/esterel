@@ -1,6 +1,6 @@
 #lang racket
 (module* cos racket
-  (require esterel/cos-front-end (for-syntax syntax/parse racket/syntax))
+  (require esterel/pop-pl-front-end (for-syntax syntax/parse racket/syntax))
   (define-esterel-form after&
     (syntax-parser
       [(_ n:nat S body ...)
@@ -8,10 +8,8 @@
       [(_ S body ...)
        #'(seq& (await& S) body ...)]))
   (define heparin
-    (esterel-machine
-     #:inputs ((aptt 0) ;; in seconds
-               hour
-               minute)
+    (pop-pl-machine
+     #:inputs ((aptt 0)) ;; in seconds)
      #:outputs ((give-bolus 0)
                 (increase 0)
                 (decrease 0)
@@ -48,12 +46,20 @@
        (par&
         (loop-each&
          aptt
-         ;; TODO how?
-         (await& 2 aptt-59-101)
+         ;; TODO
+         ;; get await to be able to handle if& style checks
+         (trap& T
+                (loop&
+                 (await& aptt)
+                 (if& (<= 59 (? aptt) 101)
+                      (exit& T)
+                      nothing&)
+                 pause&))
          (sustain& theraputic))
 
         ;; this probably has the wrong behavior
         ;; IF check-aptt is also an input signal
+        ;; not that that will compile correctly...
         (loop&
          (trap& checking
                 (par& (seq& (await& check-aptt) (exit& checking))
@@ -66,7 +72,7 @@
   (define mach (machine-prog heparin))
   (require esterel/cos-model redex/reduction-semantics)
   (time
-   (eval-top heparin '((aptt 10))))
+   (pop-pl-eval heparin '((aptt 10))))
   )
 (module* cbs racket
   (require esterel/front-end (for-syntax syntax/parse racket/syntax))
