@@ -23,6 +23,7 @@
          cond&
          ?
          machine-prog
+         machine-store
          (for-syntax msg call est))
 (require esterel/cos-model
          redex/reduction-semantics

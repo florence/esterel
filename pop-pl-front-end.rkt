@@ -22,6 +22,7 @@
 
 (require esterel/cos-front-end
          (prefix-in esterel: esterel/cos-front-end)
+         redex/reduction-semantics
          (for-syntax syntax/parse racket/format racket/syntax))
 
 
@@ -36,17 +37,40 @@
         body)]))
 
 (define (pop-pl-eval in-machine inputs)
+  (define time-inputs
+    (apply +
+           (filter values
+                   (for/list ([i inputs])
+                     (match i
+                       [(list (? time? t) v) (* v (time->factor t))]
+                       [(? time? t) (time->factor t)]
+                       [else #f])))))
   (define inputs/time
-    (for/list ([i inputs])
-      (match i
-        [(list (? time? t) v)
-         (list t (* v (time->factor t)))]
-        [(? time? t)
-         (list t (time->factor t))]
-        [else i])))
-  (eval-top
-   in-machine
-   inputs/time))
+    (filter
+     values
+     (for/list ([i inputs])
+       (match i
+         [(list (? time? t) v) #f]
+         [(? time? t) #f]
+         [else i]))))
+  (define-values (in-machine* tsig)
+    (for/fold ([om in-machine]
+               [tsig null])
+              ([_ (in-range 0 time-inputs)])
+      (define-values (* **)
+        (heartbeat om))
+      (values * (append tsig **))))
+  (define-values (om signals)
+    (eval-top
+     in-machine*
+     inputs/time))
+  ;; TODO append is maybe wrong op?
+  (values om (append tsig signals)))
+
+(define (heartbeat om)
+  (define store (machine-store om))
+  (define time (term (data<- ,store (time value))))
+  (eval-top om `((time ,(add1 time)))))
 
 (define-syntax (def-time-tables stx)
   (syntax-parse stx
