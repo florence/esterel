@@ -1,4 +1,4 @@
-#lang racket
+#lang debug racket
 (provide
  (except-out
   (all-from-out esterel/cos-front-end)
@@ -18,13 +18,14 @@
  loop-each&
  signal&
  abort&
- every&)
+ every&
+ debug&)
 
 (require esterel/cos-front-end
+         (only-in esterel/cos-model data-ref)
          (prefix-in esterel: esterel/cos-front-end)
          redex/reduction-semantics
          (for-syntax syntax/parse racket/format racket/syntax))
-
 
 (define-syntax (pop-pl-machine stx)
   (syntax-parse stx
@@ -60,16 +61,20 @@
       (define-values (* **)
         (heartbeat om))
       (values * (append tsig **))))
+  (machine-store in-machine*)
   (define-values (om signals)
-    (eval-top
-     in-machine*
-     inputs/time))
+    (if (and (not (null? inputs)) (null? inputs/time))
+        (values in-machine* null)
+        (eval-top
+         in-machine*
+         inputs/time)))
+  (machine-store om)
   ;; TODO append is maybe wrong op?
   (values om (append tsig signals)))
 
 (define (heartbeat om)
   (define store (machine-store om))
-  (define time (term (data<- ,store (time value))))
+  (define time (term (data-ref ,store (time value))))
   (eval-top om `((time ,(add1 time)))))
 
 (define-syntax (def-time-tables stx)
@@ -96,7 +101,7 @@
               #:attr factor (datum->syntax this-syntax (time->factor (syntax-e this-syntax)))))))]))
 
 (def-time-tables
-  [time-factor 1]
+  [time-factor 1/60]
   time->factor
   time-msg
   time?
@@ -126,7 +131,7 @@
 (define-esterel-form await&
   (syntax-parser
     [(f S:time-msg)
-     #'(f 1 S:msg)]
+     #'(f 1 S)]
     [(_ t:call S:time-msg)
      #'(esterel:await& (* S.factor t) time)]
     [(_ b ...)
@@ -137,7 +142,7 @@
     [(_ (c:call S:msg) p:expr ...)
      #'(seq& (await& c S) (loop-each& S p ...))]
     [(f S:msg p:expr ...)
-     #'(f (1 S:msg) p ...)]))
+     #'(f (1 S) p ...)]))
 
 (define-esterel-form loop-each&
   (syntax-parser
@@ -175,3 +180,11 @@
      (raise-syntax-error 'emit& "cannot emit time signal" this-syntax)]
     [(emit& b ...)
      #'(esterel:emit& b ...)]))
+
+(define-esterel-form debug&
+  (syntax-parser
+    [(d a)
+     #`(d a nothing&)]
+    [(_ a:call b)
+     (define/with-syntax v (generate-temporary 'debug))
+     #`(var& v := a b)]))

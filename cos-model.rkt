@@ -16,8 +16,19 @@
 (define-syntax-rule (render-derivations r)
     (show-derivations (build-derivations r)))
 
-(define-struct esterel-top-procedure (proc)
-  #:property prop:procedure (struct-field-index proc))
+(define-struct esterel-top-procedure (code proc)
+  #:property prop:procedure (struct-field-index proc)
+  #:methods gen:custom-write
+  [(define write-proc
+     (lambda (s p mode)
+       (define f
+         (case mode
+           [(#t) write]
+           [(#f) display]
+           [else (lambda (p port) (print p port mode))]))
+       (f (list
+           'make-esterel-top-procedure
+           (esterel-top-procedure-code s)) p)))])
 
 (define-language nats
   (nat zero  (Succ nat))
@@ -614,13 +625,13 @@
   [(det-> (machine pdot data) E (machine pdotdot data_*) e k)
    ------------
    (det-> (machine (par pdot ⊥ qdotdot m) data) E
-              (machine (par pdotdot k qdotdot m) data_*) e ⊥)]
+          (machine (par pdotdot k qdotdot m) data_*) e ⊥)]
 
   [(where #f ,(judgment-holds (det-> (machine pdotdot data) E (machine pdotdot data_*) e k)))
    (det-> (machine qdot data) E (machine qdotdot data_*) e k)
    ------------
    (det-> (machine (par pdotdot m qdot ⊥) data) E
-              (machine (par pdotdot m qdotdot k) data_*) e ⊥)])
+          (machine (par pdotdot m qdotdot k) data_*) e ⊥)])
 
 
 (define-metafunction esterel-eval
@@ -657,6 +668,16 @@
   [(data-ref (any_1 .... (dshared s datum shared-stat) any_2 ...)
              (s value))
    datum])
+(define-metafunction ref-lang
+  data-ref-ext : data input -> output
+  [(data-ref-ext (any_1 .... (dvar v datum) any_2 ...) v) datum]
+  [(data-ref-ext (any_1 .... (dshared s datum shared-stat) any_2 ...)
+                 (s status))
+   shared-stat]
+  [(data-ref-ext (any_1 .... (dshared s datum shared-stat) any_2 ...)
+             (s value))
+   datum]
+  [(data-ref-ext any ...) #f])
 
 
 (define-metafunction esterel-eval
@@ -1289,6 +1310,24 @@
       (machine pdotdot_* data_*)))
 
    (eval->> M E (machine pdotdot_** data_**) (S ...))
+   -----------
+   (eval->> (machine pdotdot data) E
+            (machine pdotdot_** data_**) (S ...))]
+
+  [(where
+    ()
+    ,(judgment-holds
+      (det-> (machine pdotdot data) E
+             (machine pdotdot_* data_*) any_1 any_2)
+      (machine pdotdot_* data_*)))
+
+   (side-condition
+    ,(error 'eval "evaluation stuck at: ~a\n~a"
+            (pretty-format `(machine pdotdot data))
+            (pretty-format `E)))
+   ;; never run just here to make code compile
+   (eval->> (machine pdotdot data) E
+            (machine pdotdot_** data_**) (S ...))
    -----------
    (eval->> (machine pdotdot data) E
             (machine pdotdot_** data_**) (S ...))])
@@ -2181,7 +2220,9 @@
   [(remove-selected (signal S pdotdot))
    (signal S (remove-selected pdotdot))]
   [(remove-selected (signal S sstat pdotdot))
-   (signal S (remove-selected pdotdot))])
+   (signal S (remove-selected pdotdot))]
+  [(remove-selected (if v pdotdot qdotdot))
+   (if v (remove-selected pdotdot) (remove-selected qdotdot))])
 
 (define-metafunction esterel-eval
   #|

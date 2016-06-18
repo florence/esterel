@@ -14,20 +14,20 @@
                 (increase 0)
                 (decrease 0)
                 check-aptt
-                start
+                (start 0)
                 hold
                 restart)
      (par&
       ;; the initially
-      (seq& (emit& start) (emit& give-bolus 20))
+      (seq& (emit& start 10) (emit& give-bolus 20))
       ;; infusion
       (par&
        (loop-each& check-aptt
-                   (await& aptt)
-                   pause&
-                   (loop&
-                    (present& aptt (emit& bad-aptt))
-                    pause&))
+               (await& aptt)
+               pause&
+               (loop&
+                (present& aptt (emit& bad-aptt))
+                pause&))
        (loop&
         (await& aptt)
         (cond& [(< (? aptt) 45) (emit& give-bolus 10) (emit& increase 3)]
@@ -36,7 +36,7 @@
                [(<= 101 (? aptt) 123) (emit& decrease 1)]
                [(< 123 (? aptt))
                 (emit& hold)
-                (after& 59 minute
+                (after& 1 hour
                         (emit& restart)
                         (emit& decrease 3))])
         (await& check-aptt)))
@@ -44,8 +44,7 @@
       (signal&
        theraputic
        (par&
-        (loop-each&
-         aptt
+        (loop&
          ;; TODO
          ;; get await to be able to handle if& style checks
          (trap& T
@@ -53,27 +52,108 @@
                  (await& aptt)
                  (if& (<= 59 (? aptt) 101)
                       (exit& T)
-                      nothing&)
-                 pause&))
-         (sustain& theraputic))
+                      nothing&)))
+         (trap& T
+                (loop&
+                 (await& aptt)
+                 (if& (<= 59 (? aptt) 101)
+                      (exit& T)
+                      nothing&)))
+         (trap& T
+                (par&
+                 (sustain& theraputic)
+                 (loop&
+                  (await& aptt)
+                  (if& (<= 59 (? aptt) 101)
+                       nothing&
+                       (exit& T))))))
 
         ;; this probably has the wrong behavior
         ;; IF check-aptt is also an input signal
         ;; not that that will compile correctly...
-        (loop&
-         (trap& checking
-                (par& (seq& (await& check-aptt) (exit& checking))
-                      (loop&
-                       (present& theraputic nothing& (emit& check-aptt))
-                       (await& 6 hour));; should actually be 6*60 minutes?
-                      (loop&
-                       (present& theraputic (emit& check-aptt))
-                       (await& 24 hour))))))))))
+        (seq&
+         (emit& check-aptt)
+         (loop&
+          (trap& checking
+                 (par& (seq& (await& check-aptt) (exit& checking))
+                       (loop&
+                        (await& 6 hour)
+                        (present& theraputic nothing& (emit& check-aptt)))
+                       (loop&
+                        (await& 24 hour)
+                        (present& theraputic (emit& check-aptt))))))))))))
   (define mach (machine-prog heparin))
+  ;(pretty-print mach)
   (require esterel/cos-model redex/reduction-semantics)
-  (time
-   (pop-pl-eval heparin '((aptt 10))))
-  )
+  (module+ test
+    (require "cos-test-harness.rkt")
+    (time
+     (test-seq
+      heparin
+      (() ((start 10) (give-bolus 20) check-aptt))))
+    (time
+     (test-seq
+      heparin
+      (() ((start 10) (give-bolus 20) check-aptt))
+      (((aptt 126)) (hold))
+      (((aptt 126)) (bad-aptt))))
+
+    (time
+     (test-seq
+      heparin
+      (() ((start 10) (give-bolus 20) check-aptt))
+      (((aptt 126)) (hold))
+      ((hour) (restart (decrease 3)))))
+
+    (time
+     (test-seq
+      heparin
+      (() ((start 10) (give-bolus 20) check-aptt))
+      (((aptt 126)) (hold))
+      ((hour) (restart (decrease 3)))
+      (((aptt 126)) (bad-aptt))))
+
+    (time
+     (test-seq
+      heparin
+      (() ((start 10) (give-bolus 20) check-aptt))
+      (((aptt 126)) (hold))
+      (((aptt 126)) (bad-aptt))
+      (((hour 1)) (restart (decrease 3)))))
+
+    (time
+     (test-seq
+      heparin
+      (() ((start 10) (give-bolus 20) check-aptt))
+      (((aptt 40)) ((give-bolus 10) (increase 3)))
+      ;; 6 hours
+      (((hour 6)) (check-aptt))
+      (((aptt 110)) ((decrease 1)))
+      ;; 6 hours
+      (((hour 6)) (check-aptt))
+      (((aptt 90)) ())
+      ;; 6 hours
+      (((hour 6)) (check-aptt))
+      (((aptt 90)) ())
+      ;; 24 hours
+      (((hour 12)) ())
+      (((hour 12)) (check-aptt))
+      (((aptt 99)) ())
+      ;; 24 hours
+      (((hour 12)) ())
+      (((hour 12)) (check-aptt))
+      (((aptt 126)) (hold))
+      (((hour 1)) (restart (decrease 3)))
+      ;; 5 hours
+      (((hour 5)) (check-aptt))
+      (((aptt 90)) ())
+      ;; 6 hours
+      (((hour 6)) (check-aptt))
+      (((aptt 90)) ())
+      ;; 24 hours
+      (((hour 12)) ())
+      (((hour 12)) (check-aptt))))))
+
 (module* cbs racket
   (require esterel/front-end (for-syntax syntax/parse racket/syntax))
   (module+ test (require "test-harness.rkt"))
