@@ -36,9 +36,9 @@
                [(<= 101 (? aptt) 123) (emit& decrease 1)]
                [(< 123 (? aptt))
                 (emit& hold)
+                (emit& decrease 3)
                 (after& 1 hour
-                        (emit& restart)
-                        (emit& decrease 3))])
+                        (emit& restart))])
         (await& check-aptt)))
       ;; monitoring
       (signal&
@@ -95,31 +95,31 @@
      (test-seq
       heparin
       (() ((start 10) (give-bolus 20) check-aptt))
-      (((aptt 126)) (hold))
+      (((aptt 126)) (hold (decrease 3)))
       (((aptt 126)) (bad-aptt))))
 
     (time
      (test-seq
       heparin
       (() ((start 10) (give-bolus 20) check-aptt))
-      (((aptt 126)) (hold))
-      ((hour) (restart (decrease 3)))))
+      (((aptt 126)) (hold (decrease 3)))
+      ((hour) (restart))))
 
     (time
      (test-seq
       heparin
       (() ((start 10) (give-bolus 20) check-aptt))
-      (((aptt 126)) (hold))
-      ((hour) (restart (decrease 3)))
+      (((aptt 126)) (hold (decrease 3)))
+      ((hour) (restart))
       (((aptt 126)) (bad-aptt))))
 
     (time
      (test-seq
       heparin
       (() ((start 10) (give-bolus 20) check-aptt))
-      (((aptt 126)) (hold))
+      (((aptt 126)) (hold (decrease 3)))
       (((aptt 126)) (bad-aptt))
-      (((hour 1)) (restart (decrease 3)))))
+      (((hour 1)) (restart))))
 
     (time
      (test-seq
@@ -142,8 +142,8 @@
       ;; 24 hours
       (((hour 12)) ())
       (((hour 12)) (check-aptt))
-      (((aptt 126)) (hold))
-      (((hour 1)) (restart (decrease 3)))
+      (((aptt 126)) (hold (decrease 3)))
+      (((hour 1)) (restart))
       ;; 5 hours
       (((hour 5)) (check-aptt))
       (((aptt 90)) ())
