@@ -23,6 +23,7 @@
          cond&
          var&
          ?
+         get-var
          machine-prog
          machine-store
          (for-syntax msg call est local-expand-esterel))
@@ -317,7 +318,7 @@
      #`(redex-let esterel-eval
                   ([(any_1 (... ...) (dshared svar datum shared-stat) any_2 (... ...))
                     ENV])
-                  (term datum))]))
+                   (term datum))]))
 (define-syntax get-var
   (syntax-parser
     [(? v:id)
