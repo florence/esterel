@@ -7,8 +7,9 @@
   (define-syntax-rule (test-case str tests ...)
     (rackunit:test-case
      str
-     (printf "starting \"~a\" tests\n" str)
+     ;(printf "starting \"~a\" tests\n" str)
      tests ...
+     #;
      (printf "finishing \"~a\" tests\n" str))))
 
 (define-syntax quasiquote (make-rename-transformer #'term))
@@ -924,9 +925,9 @@
      (do `(signal S ⊥ (seq (emit S) (seq pause (· pause)))))
      `(
        ((signal
-          S«226»
+          S
           zero
-          (seq (emit S«226») (seq pause (· pause))))
+          (seq (emit S) (seq pause (· pause))))
          ⊥
          ⊥
          ())
@@ -1262,8 +1263,8 @@
            (pretty-format `(any ...)))
    (where (any ...)
           ,(judgment-holds
-            (c->> (machine (· pbar) data) E
-                     M k (S ...))
+            (eval->> (machine (· pbar) data) E
+                     M (S ...))
             (M (S ...))))])
 ;; judgment form for raw evaluation
 (define-judgment-form esterel-eval
@@ -1419,6 +1420,7 @@
 
 
 (module+ test
+  (provide (all-defined-out))
   (define-extended-language esterel-check esterel-eval
     (p-check
      nothing
@@ -1509,12 +1511,13 @@
                       `(k_r ...)))
    (where #t ,(andmap (lambda (M) (alpha-equivalent? esterel-eval `(machine qbar data_*) M))
                       `(M_* (machine qbar_r data_r*) ...)))
-   ;(side-condition ,(displayln `(free-signals pbar)))
-   ;(side-condition ,(displayln `((∈ S (free-signals pbar)) ...)))
+   ;(side-condition ,(displayln `(S_* ... S ... (free-emitted-signals pbar))))
+   ;(side-condition ,(displayln `((∈ S (free-emitted-signals pbar)) ...)))
    (where (#t ...) ((∈ S_* (free-emitted-signals pbar)) ...
                     (∈ S (free-emitted-signals pbar)) ...))
-   (where E_2 (Can_S pbar ()))
-   ;(side-condition ,(displayln `((∈ (S one) E) ...)))
+   (where E_2 (Can_S pbar E))
+   ;(side-condition ,(displayln `((S one) ... E_2)))
+   ;(side-condition ,(displayln `((∈ (S one) E_2) ...)))
    (where (#t ...) ((∈ (S_* (Succ zero)) E_2) ...
                     (∈ (S (Succ zero)) E_2) ...))
    (where #t

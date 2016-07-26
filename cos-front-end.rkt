@@ -23,6 +23,7 @@
          cond&
          var&
          ?
+         :=&
          get-var
          machine-prog
          machine-store
@@ -168,7 +169,6 @@
     [(s:id r ...)
      (wrap-shared #'(r ...) stx)]))
 
-(define-for-syntax valid-esterel-forms (mutable-free-id-set))
 (define-syntax define-esterel-form
   (syntax-parser
     [(_ name:id val)
@@ -184,18 +184,19 @@
    (lambda (stx)
      (unless (in-machine?)
        (raise-syntax-error #f "use of a esterel form not in a esterel machine" stx))
-     (define n
-       (syntax-parse stx
-         [(n:id . body)
-          #'n]
-         [name:id #'name]))
-     (unless (esterel-form? (syntax-local-value n))
-       (raise-syntax-error #f "use of non-esterel form in esterel context" stx))
      (f stx))))
 
 (define-for-syntax (local-expand-esterel stx)
   (unless (in-machine?)
       (raise-syntax-error #f "use of a esterel form escaped esterel context" stx))
+  (define n
+    (syntax-parse stx
+      [(n:id . body)
+       #'n]
+      [name:id #'name]))
+  (unless (or (memf (lambda (x) (free-identifier=? n x)) core-esterel-forms)
+              (esterel-form? (syntax-local-value n (lambda () #f))))
+    (raise-syntax-error #f "use of non-esterel form in esterel context" stx))
   (local-expand stx 'expression core-esterel-forms))
 
 (define-syntax-parameter ENV (lambda (stx) (raise-syntax-error #f "no" stx)))
