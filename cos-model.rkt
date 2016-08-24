@@ -1,5 +1,5 @@
 #lang debug racket
-(require redex racket/random)
+(require redex/reduction-semantics racket/random)
 (provide (all-defined-out))
 (module+ test
   (provide (all-defined-out))
@@ -110,7 +110,6 @@
    (hat pause)
    (present S phat q)
    (present S p qhat)
-   (suspend S phat)
    (seq phat q)
    (seq p qhat)
    (suspend phat S)
@@ -361,7 +360,7 @@
    [(→ (machine pdot data) (* E (S m))
        ;;TODO should this really be the same data?
        (machine pdot_* data) S ⊥)
-    (side-condition (∈ m (⊥ 1)))
+    (side-condition (∈ m (⊥ (Succ zero))))
     ------------
    "29"
     (→ (machine (signal S m pdot) data) E
@@ -395,7 +394,7 @@
     ;; added to avoid unneeded non-determinism
     (side-condition ,(or
                       (not (equal? `⊥ `m))
-                      (not `(∉ (S one) (Can_S pdot (* E (S ⊥)))))))
+                      (not `(∉ (S (Succ zero)) (Can_S pdot (* E (S ⊥)))))))
     ------------
    "32"
     (→ (machine (signal S m pdot) data) E
@@ -2299,8 +2298,8 @@
   [(Can (par pdot ⊥ qdot ⊥) E)
    ((U (Can_S pdot E)
        (Can_S qdot E))
-    ((meta-max (Can_K pdot E)
-                (Can_K qdot E)))
+    (meta-max (Can_K pdot E)
+              (Can_K qdot E))
     (U (Can_V pdot E)
        (Can_V qdot E)))]
 
@@ -2308,13 +2307,13 @@
   ;; FIXING, listed as q, fails if not qbar
   [(Can (par pdot ⊥ qbar k) E)
    ((Can_S pdot E)
-    ((meta-max (Can_K pdot E) (k)))
+    (meta-max (Can_K pdot E) (k))
     (Can_V pdot E))]
 
   ;; FIXING, listed as p, fails if not pbar
   [(Can (par pbar k qdot ⊥) E)
    ((Can_S qdot E)
-    ((meta-max (Can_K qdot E) (k)))
+    (meta-max (Can_K qdot E) (k))
     (Can_V qdot E))]
 
   ;; FIXING, listed as p/q, fails if not pbar/qbar
@@ -2399,7 +2398,7 @@
 
   [(Can (par p q) E)
    ( (U (Can_S p E) (Can_S q E))
-     ((meta-max (Can_K p E) (Can_K q E)))
+     (meta-max (Can_K p E) (Can_K q E))
      (U (Can_V p E) (Can_V q E)) )]
 
   [(Can (trap p) E)
@@ -2467,7 +2466,7 @@
 
   [(Can (par phat qhat) E)
    ( (U (Can_S phat E) (Can_S qhat E))
-     ((meta-max (Can_K phat E) (Can_K qhat E)))
+     (meta-max (Can_K phat E) (Can_K qhat E))
      (U (Can_V phat E) (Can_V qhat E)) )]
 
   [(Can (trap phat) E)
@@ -2483,7 +2482,7 @@
    (without (Can phat (* E (S ⊥))) S)])
 
 (define-metafunction esterel-eval
-  U : (any ...) (any ...) -> (any ...)
+  U : (any ...) ... -> (any ...)
   ;; I suspect this case is wrong...?
   [(U E_1 E_2)
    (U_E E_1 E_2)]
@@ -2495,7 +2494,10 @@
   [(U () (any ...))
    (any ...)]
   [(U (any any_1 ...) (any_2 ...))
-   (U (any_1 ...) (insert any (any_2 ...)))])
+   (U (any_1 ...) (insert any (any_2 ...)))]
+  [(U (any ...)) (any ...)]
+  [(U (any_1 ...) (any_2 ...) (any_r ...) ...)
+   (U (U (any_1 ...) (any_2 ...)) (any_r ...) ...)])
 
 (define-metafunction esterel-eval
   ;; special case union for signal events
@@ -2603,8 +2605,12 @@
   (k) or k
   |#
 
-  [(meta-max (k_1 ...) (k_2 ...))
-   (meta-max k_1 ... k_2 ...)]
+  [(meta-max (k_11 k_1 ...) (k_2 ...))
+   (U (meta-max k_11 (k_2 ...))
+      (meta-max (k_1 ...) (k_2 ...)))]
+  [(meta-max (k_1 ...) (k_2 ...)) ()]
+  [(meta-max k_1 (k_2 ...))
+   (U ((meta-max k_1 k_2)) ...)]
   [(meta-max k_1 k_2)
    k_2
    (where #t (nat<= k_1 k_2))]
