@@ -1,4 +1,4 @@
-#lang debug racket
+#lang racket
 (require redex/reduction-semantics racket/random)
 (provide (all-defined-out))
 (module+ test
@@ -621,7 +621,7 @@
 (define-extended-judgment-form esterel-eval →
   #:mode     (det-> I I O O O)
   #:contract (det-> M E M e k)
-  ;; morally were 14 and 15. change to be deterministic
+  ;; morally were 14 an(seq (trap (par (exit 0) pause)) (emit rX)))d 15. change to be deterministic
   [(det-> (machine pdot data) E (machine pdotdot data_*) e k)
    ------------
    (det-> (machine (par pdot ⊥ qdotdot m) data) E
@@ -649,10 +649,8 @@
           data)]
   [(shared-of v data) ()]
   [(shared-of (+) data) ()]
-  [(shared-of (+ call) data)
-   (shared-of call data)]
-  [(shared-of (+ call_1 call_2) data)
-   (U (shared-of call_1 data) (shared-of call_2 data))]
+  [(shared-of (+ call ...) data)
+   (U (shared-of call data) ...)]
   [(shared-of (func s ... datum) data) (s ...)]
   [(shared-of datum data) ()])
 

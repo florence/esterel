@@ -5,6 +5,6 @@
 
 (define deps
   '("base" "rackunit-lib" "redex-lib" "redex-gui-lib"))
-(define build-deps '("debug"))
+(define build-deps '())
 
 (define test-omit-paths '("examples/causality.rkt"))

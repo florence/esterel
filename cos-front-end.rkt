@@ -1,4 +1,4 @@
-#lang debug racket
+#lang racket
 (provide esterel-machine
          define-esterel-form
          eval-top
@@ -14,6 +14,7 @@
          trap&
          signal&
          loop-each&
+         shared&
          await&
          abort&
          halt&
@@ -33,7 +34,8 @@
          racket/stxparam
          (for-syntax racket/pretty syntax/parse racket/syntax
                      racket/sequence racket/format racket/promise
-                     syntax/id-set))
+                     syntax/id-set redex/reduction-semantics
+                     esterel/cos-model))
 
 (define-for-syntax core-esterel-forms
   (syntax->list
@@ -54,7 +56,6 @@
      :=
      <=
      if))))
-
 
 ;; Machine Inputs -> Machine Inputs
 ;; where Inputs = (listof (U symbol (lst symbol any)))
@@ -125,8 +126,8 @@
                              (for/hash ([i (in-syntax #'(in ... out ...))])
                                (define i* (syntax-e (syntax-parse i [(s _) #'s] [_ i])))
                                (values i* (generate-temporary i*)))])
-               (wrap-shared #'(in ... out ...)
-                            (local-expand-esterel #'machine))))
+               (local-expand-esterel
+                (wrap-shared #'(in ... out ...) #'machine))))
            init-expr)))
      (define/with-syntax (out/value ...)
        (for/list ([o (in-syntax #'(out ...))]
@@ -165,7 +166,7 @@
     [() stx]
     [((s:id c) r ...)
      ;(define/with-syntax s_var (get-signal-var #'s))
-     #`(shared s := c #,(wrap-shared #'(r ...) stx))]
+     #`(shared& s := c #,(wrap-shared #'(r ...) stx))]
     [(s:id r ...)
      (wrap-shared #'(r ...) stx)]))
 
@@ -179,6 +180,7 @@
 (begin-for-syntax
   (struct esterel-form (proc)
     #:property prop:procedure (struct-field-index proc)))
+(begin-for-syntax (provide make-esterel-form))
 (define-for-syntax (make-esterel-form f)
   (esterel-form
    (lambda (stx)
@@ -186,7 +188,10 @@
        (raise-syntax-error #f "use of a esterel form not in a esterel machine" stx))
      (f stx))))
 
-(define-for-syntax (local-expand-esterel stx)
+(begin-for-syntax
+  (define-extended-language e* esterel-eval
+    (p ::= .... (exit any))))
+(define-for-syntax (local-expand-esterel stx [ctx #f])
   (unless (in-machine?)
       (raise-syntax-error #f "use of a esterel form escaped esterel context" stx))
   (define n
@@ -195,9 +200,14 @@
        #'n]
       [name:id #'name]))
   (unless (or (memf (lambda (x) (free-identifier=? n x)) core-esterel-forms)
-              (esterel-form? (syntax-local-value n (lambda () #f))))
+              (esterel-form? (syntax-local-value n (lambda () #f) ctx)))
     (raise-syntax-error #f "use of non-esterel form in esterel context" stx))
-  (local-expand stx 'expression core-esterel-forms))
+  (define x
+    (local-expand stx (if ctx (list ctx) 'expression) core-esterel-forms ctx))
+  (define datum (syntax->datum x))
+  (unless (redex-match? e* p datum)
+    (raise-syntax-error #f (~a "got bad esterel code " (~a datum)) stx))
+  x)
 
 (define-syntax-parameter ENV (lambda (stx) (raise-syntax-error #f "no" stx)))
 (define-for-syntax shared-vars-set (make-parameter #f))
@@ -374,6 +384,12 @@
     #:datum-literals (:=)
     [(_ a:id := b:call c:est)
      #'(var a := b.func c.exp)]))
+
+(define-esterel-form shared&
+  (syntax-parser
+    #:datum-literals (:=)
+    [(_ a:id := b:call c:est)
+     #'(shared a := b.func c.exp)]))
 
 (define-esterel-form repeat&
   (syntax-parser

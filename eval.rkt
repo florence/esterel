@@ -1,4 +1,4 @@
-#lang debug racket
+#lang racket
 (provide eval)
 (require (submod esterel/ast))
 (require (submod esterel/potentials))

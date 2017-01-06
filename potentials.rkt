@@ -1,4 +1,4 @@
-#lang debug racket
+#lang racket
 (provide must can can* rem get add has-selected?)
 (require esterel/ast)
 (module+ test (require rackunit))
