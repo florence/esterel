@@ -145,7 +145,7 @@
    (if v p qdot))
 
   (call (+ call call) (+ call) (+) v s
-        (func s ... datum)
+        (rfunc s ... datum)
         datum)
   (datum natural
          any;; ENV->any/c racket functions
@@ -651,7 +651,7 @@
   [(shared-of (+) data) ()]
   [(shared-of (+ call ...) data)
    (U (shared-of call data) ...)]
-  [(shared-of (func s ... datum) data) (s ...)]
+  [(shared-of (rfunc s ... datum) data) (s ...)]
   [(shared-of datum data) ()])
 
 (define-extended-language ref-lang esterel-eval
@@ -687,7 +687,7 @@
   [(eval-call (+ call ...) data)
    ,(apply + `(datum ...))
    (where (datum ...) ((eval-call call data) ...))]
-  [(eval-call (func s ... any) data)
+  [(eval-call (rfunc s ... any) data)
    ,(if (esterel-top-procedure? `any)
         (`any `data)
         `any)]
